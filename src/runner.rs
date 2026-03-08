@@ -27,7 +27,10 @@ fn build_sql(rule: &Rule) -> String {
                 "SELECT COUNT(*) FROM data WHERE \"{}\" > {}",
                 rule.column, thr
             )
-        }
+        },
+        Check::NotEmpty => {
+          format!("SELECT COUNT(*) FROM data WHERE \"{}\" = ''", rule.column)
+        },
     }
 }
 

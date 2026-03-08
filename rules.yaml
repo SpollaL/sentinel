@@ -1,0 +1,11 @@
+rules:
+  - name: no_nulls_in_age
+    column: age
+    check: not_null
+
+  - name: age_is_positive
+    column: age
+    check: min
+    value: 0
+
+

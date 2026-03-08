@@ -36,15 +36,20 @@ async fn main() {
             .register_parquet("data", &args.file, ParquetReadOptions::default())
             .await
             .expect("Could not load Parquet file"),
-        _ => panic!("Unsupported file format {}", ext)
+        _ => panic!("Unsupported file format {}", ext),
     }
     println!("Loaded {} rules", rules.rules.len());
+    let mut any_failed = false;
     for rule in &rules.rules {
         let result = run_rule(&ctx, rule).await;
         if result.passed {
             println!("PASS {}", result.name)
         } else {
+            any_failed = true;
             println!("FAIL {} ({} violations)", result.name, result.violations);
         }
+    }
+    if any_failed {
+        std::process::exit(1);
     }
 }

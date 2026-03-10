@@ -10,7 +10,9 @@ pub struct Rule {
     pub name: String,
     pub column: String,
     pub check: Check,
-    pub value: Option<f64>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub pattern: Option<String>
 }
 
 #[derive(Debug, Deserialize)]
@@ -20,5 +22,8 @@ pub enum Check {
     NotEmpty,
     Min,
     Max,
+    Between,
+    Unique,
+    Regex,
 }
 

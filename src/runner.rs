@@ -1,6 +1,6 @@
 use crate::rules::{Check, Rule};
-use datafusion::prelude::*;
 use datafusion::arrow::array::Int64Array;
+use datafusion::prelude::*;
 
 pub struct RuleResult {
     pub name: String,
@@ -15,22 +15,46 @@ fn build_sql(rule: &Rule) -> String {
             rule.column
         ),
         Check::Min => {
-            let thr = rule.value.expect("Min check requires a value");
+            let thr = rule.min.expect("Min check requires a min value");
             format!(
                 "SELECT COUNT(*) FROM data WHERE \"{}\" < {}",
                 rule.column, thr
             )
         }
         Check::Max => {
-            let thr = rule.value.expect("Min check requires a value");
+            let thr = rule.max.expect("Max check requires a max value");
             format!(
                 "SELECT COUNT(*) FROM data WHERE \"{}\" > {}",
                 rule.column, thr
             )
-        },
+        }
         Check::NotEmpty => {
-          format!("SELECT COUNT(*) FROM data WHERE \"{}\" = ''", rule.column)
-        },
+            format!("SELECT COUNT(*) FROM data WHERE \"{}\" = ''", rule.column)
+        }
+        Check::Between => {
+            let min = rule.min.expect("Between check requires a min value");
+            let max = rule.max.expect("Between check requires a max value");
+            format!(
+                "SELECT COUNT(*) FROM data WHERE \"{}\" < {} OR \"{}\" > {}",
+                rule.column, min, rule.column, max
+            )
+        }
+        Check::Unique => {
+            format!(
+                "SELECT COALESCE(SUM(cnt), 0) FROM (SELECT COUNT(\"{}\") AS cnt FROM data GROUP BY \"{}\" HAVING COUNT(\"{}\")>1)",
+                rule.column, rule.column, rule.column
+            )
+        }
+        Check::Regex => {
+            let pattern = rule
+                .pattern
+                .clone()
+                .expect("Regex check requires a pattern value");
+            format!(
+                "SELECT COUNT(*) FROM data WHERE REGEXP_MATCH(\"{}\", '{}') IS NULL",
+                rule.column, pattern
+            )
+        }
     }
 }
 
@@ -49,6 +73,6 @@ pub async fn run_rule(ctx: &SessionContext, rule: &Rule) -> RuleResult {
     RuleResult {
         name: rule.name.clone(),
         passed: violations == 0,
-        violations: violations
+        violations: violations,
     }
 }

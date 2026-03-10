@@ -6,6 +6,23 @@ rules:
   - name: age_is_positive
     column: age
     check: min
-    value: 0
+    min: 0
 
+  - name: no_empty_names
+    column: name
+    check: not_empty
 
+  - name: age_between_27_30
+    column: age
+    check: between
+    min: 27
+    max: 30
+
+  - name: name_unique
+    column: name
+    check: unique
+
+  - name: al_in_name
+    column: name
+    check: regex
+    pattern: al

@@ -41,7 +41,13 @@ async fn main() {
     println!("Loaded {} rules", rules.rules.len());
     let mut any_failed = false;
     for rule in &rules.rules {
-        let result = run_rule(&ctx, rule).await;
+        let result = match run_rule(&ctx, rule).await {
+            Ok(result) => result,
+            Err(err) => {
+                eprintln!("INVALID {}: {}", rule.name, err);
+                std::process::exit(1);
+            }
+        };
         if result.passed {
             println!("PASS {}", result.name)
         } else {

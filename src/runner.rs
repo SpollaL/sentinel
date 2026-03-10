@@ -8,58 +8,58 @@ pub struct RuleResult {
     pub violations: u64,
 }
 
-fn build_sql(rule: &Rule) -> String {
+fn build_sql(rule: &Rule) -> Result<String, String> {
     match &rule.check {
-        Check::NotNull => format!(
+        Check::NotNull => Ok(format!(
             "SELECT COUNT(*) FROM data WHERE \"{}\" IS NULL",
             rule.column
-        ),
+        )),
         Check::Min => {
-            let thr = rule.min.expect("Min check requires a min value");
-            format!(
+            let thr = rule.min.ok_or("Min check requires a min value")?;
+            Ok(format!(
                 "SELECT COUNT(*) FROM data WHERE \"{}\" < {}",
                 rule.column, thr
-            )
+            ))
         }
         Check::Max => {
-            let thr = rule.max.expect("Max check requires a max value");
-            format!(
+            let thr = rule.max.ok_or("Max check requires a max value")?;
+            Ok(format!(
                 "SELECT COUNT(*) FROM data WHERE \"{}\" > {}",
                 rule.column, thr
-            )
+            ))
         }
         Check::NotEmpty => {
-            format!("SELECT COUNT(*) FROM data WHERE \"{}\" = ''", rule.column)
+            Ok(format!("SELECT COUNT(*) FROM data WHERE \"{}\" = ''", rule.column))
         }
         Check::Between => {
-            let min = rule.min.expect("Between check requires a min value");
-            let max = rule.max.expect("Between check requires a max value");
-            format!(
+            let min = rule.min.ok_or("Between check requires a min value")?;
+            let max = rule.max.ok_or("Between check requires a max value")?;
+            Ok(format!(
                 "SELECT COUNT(*) FROM data WHERE \"{}\" < {} OR \"{}\" > {}",
                 rule.column, min, rule.column, max
-            )
+            ))
         }
         Check::Unique => {
-            format!(
+            Ok(format!(
                 "SELECT COALESCE(SUM(cnt), 0) FROM (SELECT COUNT(\"{}\") AS cnt FROM data GROUP BY \"{}\" HAVING COUNT(\"{}\")>1)",
                 rule.column, rule.column, rule.column
-            )
+            ))
         }
         Check::Regex => {
             let pattern = rule
                 .pattern
                 .clone()
-                .expect("Regex check requires a pattern value");
-            format!(
+                .ok_or("Regex check requires a pattern value")?;
+            Ok(format!(
                 "SELECT COUNT(*) FROM data WHERE REGEXP_MATCH(\"{}\", '{}') IS NULL",
                 rule.column, pattern
-            )
+            ))
         }
     }
 }
 
-pub async fn run_rule(ctx: &SessionContext, rule: &Rule) -> RuleResult {
-    let sql = build_sql(rule);
+pub async fn run_rule(ctx: &SessionContext, rule: &Rule) -> Result<RuleResult, String> {
+    let sql = build_sql(rule)?;
 
     let df = ctx.sql(&sql).await.expect("SQL query failed");
     let batches = df.collect().await.expect("Failed to collect results");
@@ -70,9 +70,9 @@ pub async fn run_rule(ctx: &SessionContext, rule: &Rule) -> RuleResult {
         .expect("Expected Int64 column")
         .value(0) as u64;
 
-    RuleResult {
+    Ok(RuleResult {
         name: rule.name.clone(),
         passed: violations == 0,
         violations: violations,
-    }
+    })
 }

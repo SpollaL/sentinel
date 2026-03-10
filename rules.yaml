@@ -25,4 +25,3 @@ rules:
   - name: al_in_name
     column: name
     check: regex
-    pattern: al

@@ -7,6 +7,8 @@ mod runner;
 use rules::RulesFile;
 use runner::run_rule;
 
+use crate::runner::run_sql;
+
 #[derive(Parser)]
 #[command(name = "sentinel", about = "Data quality validation CLI")]
 struct Cli {
@@ -38,21 +40,20 @@ async fn main() {
             .expect("Could not load Parquet file"),
         _ => panic!("Unsupported file format {}", ext),
     }
-    println!("Loaded {} rules", rules.rules.len());
     let mut any_failed = false;
+    let total_rows = run_sql(&ctx, "SELECT COUNT(*) FROM data".into()).await;
     for rule in &rules.rules {
-        let result = match run_rule(&ctx, rule).await {
+        let result = match run_rule(&ctx, rule, total_rows).await {
             Ok(result) => result,
             Err(err) => {
                 eprintln!("INVALID {}: {}", rule.name, err);
                 std::process::exit(1);
             }
         };
-        if result.passed {
-            println!("PASS {}", result.name)
-        } else {
+        let result_json = serde_json::to_string(&result).expect("Failed to serialize");
+        println!("{}", result_json);
+        if !result.passed {
             any_failed = true;
-            println!("FAIL {} ({} violations)", result.name, result.violations);
         }
     }
     if any_failed {

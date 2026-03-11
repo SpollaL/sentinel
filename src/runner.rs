@@ -1,11 +1,15 @@
 use crate::rules::{Check, Rule};
 use datafusion::arrow::array::Int64Array;
 use datafusion::prelude::*;
+use serde::Serialize;
 
+#[derive(Debug, Serialize)]
 pub struct RuleResult {
     pub name: String,
     pub passed: bool,
     pub violations: u64,
+    pub total_rows: u64,
+    pub violation_rate: f64
 }
 
 fn build_sql(rule: &Rule) -> Result<String, String> {
@@ -58,21 +62,26 @@ fn build_sql(rule: &Rule) -> Result<String, String> {
     }
 }
 
-pub async fn run_rule(ctx: &SessionContext, rule: &Rule) -> Result<RuleResult, String> {
-    let sql = build_sql(rule)?;
-
+pub async fn run_sql(ctx: &SessionContext, sql: String) -> u64 {
     let df = ctx.sql(&sql).await.expect("SQL query failed");
     let batches = df.collect().await.expect("Failed to collect results");
-    let violations = batches[0]
+    batches[0]
         .column(0)
         .as_any()
         .downcast_ref::<Int64Array>()
         .expect("Expected Int64 column")
-        .value(0) as u64;
+        .value(0) as u64
+}
 
+pub async fn run_rule(ctx: &SessionContext, rule: &Rule, total_rows: u64) -> Result<RuleResult, String> {
+    let sql = build_sql(rule)?;
+    let violations = run_sql(ctx, sql).await;
+    let violation_rate = violations as f64 / total_rows as f64;
     Ok(RuleResult {
         name: rule.name.clone(),
         passed: violations == 0,
         violations: violations,
+        total_rows: total_rows,
+        violation_rate: violation_rate
     })
 }

@@ -42,6 +42,10 @@ async fn main() {
     }
     let mut any_failed = false;
     let total_rows = run_sql(&ctx, "SELECT COUNT(*) FROM data".into()).await;
+    if total_rows == 0 {
+        eprintln!("Input file is empty");
+        std::process::exit(1);
+    }
     for rule in &rules.rules {
         let result = match run_rule(&ctx, rule, total_rows).await {
             Ok(result) => result,

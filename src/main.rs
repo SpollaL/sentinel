@@ -7,7 +7,7 @@ mod runner;
 use rules::RulesFile;
 use runner::run_rule;
 
-use crate::runner::run_sql;
+use crate::runner::{RuleStatus, run_sql};
 
 #[derive(Parser)]
 #[command(name = "sentinel", about = "Data quality validation CLI")]
@@ -56,7 +56,7 @@ async fn main() {
         };
         let result_json = serde_json::to_string(&result).expect("Failed to serialize");
         println!("{}", result_json);
-        if !result.passed {
+        if matches!(result.status, RuleStatus::Fail) {
             any_failed = true;
         }
     }

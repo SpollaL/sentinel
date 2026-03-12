@@ -88,7 +88,7 @@ pub async fn run_rule(
     let violations = run_sql(ctx, sql).await;
     let violation_rate = violations as f64 / total_rows as f64;
     let status = {
-        if violations == 0 {
+        if violation_rate <= rule.threshold.unwrap_or(0.0) {
             RuleStatus::Pass
         } else {
             RuleStatus::Fail

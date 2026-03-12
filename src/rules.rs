@@ -12,7 +12,8 @@ pub struct Rule {
     pub check: Check,
     pub min: Option<f64>,
     pub max: Option<f64>,
-    pub pattern: Option<String>
+    pub pattern: Option<String>,
+    pub threshold: Option<f64>
 }
 
 #[derive(Debug, Deserialize)]

@@ -17,11 +17,8 @@ rules:
     check: between
     min: 27
     max: 30
+    threshold: 0.5
 
   - name: name_unique
     column: name
     check: unique
-
-  - name: al_in_name
-    column: name
-    check: regex

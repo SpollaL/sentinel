@@ -3,11 +3,13 @@ use datafusion::prelude::*;
 
 mod rules;
 mod runner;
+mod output;
 
 use rules::RulesFile;
 use runner::run_rule;
+use output::OutputFormat;
 
-use crate::runner::{RuleStatus, run_sql};
+use crate::{output::format_results, runner::{RuleResult, RuleStatus, run_sql}};
 
 #[derive(Parser)]
 #[command(name = "sentinel", about = "Data quality validation CLI")]
@@ -17,6 +19,9 @@ struct Cli {
     ///Path to the rules YAML file
     #[arg(short, long)]
     rules: String,
+    ///format output as a table
+    #[arg(short, long, default_value = "json")]
+    format: Option<OutputFormat>,
 }
 
 #[tokio::main]
@@ -24,6 +29,8 @@ async fn main() {
     let args = Cli::parse();
     let content = std::fs::read_to_string(&args.rules).expect("Could not read rules file");
     let rules: RulesFile = serde_yaml::from_str(&content).expect("Could not parse the rules YAML");
+    let format: OutputFormat = args.format
+        .expect("Could not parse output format. Valid options are json or table");
     let ext = std::path::Path::new(&args.file)
         .extension()
         .and_then(|e| e.to_str())
@@ -46,6 +53,7 @@ async fn main() {
         eprintln!("Input file is empty");
         std::process::exit(1);
     }
+    let mut results: Vec<RuleResult> = vec![];
     for rule in &rules.rules {
         let result = match run_rule(&ctx, rule, total_rows).await {
             Ok(result) => result,
@@ -54,12 +62,13 @@ async fn main() {
                 std::process::exit(1);
             }
         };
-        let result_json = serde_json::to_string(&result).expect("Failed to serialize");
-        println!("{}", result_json);
         if matches!(result.status, RuleStatus::Fail) {
             any_failed = true;
         }
+        results.push(result);
     }
+    let out = format_results(&results, &format);
+    println!("{}", out);
     if any_failed {
         std::process::exit(1);
     }

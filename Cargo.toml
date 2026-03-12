@@ -10,4 +10,5 @@ serde_yaml = "0.9"
 serde_json = "1"
 datafusion = "43"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+comfy-table = "7"
 

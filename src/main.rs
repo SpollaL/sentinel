@@ -1,15 +1,18 @@
 use clap::Parser;
 use datafusion::prelude::*;
 
+mod output;
 mod rules;
 mod runner;
-mod output;
 
+use output::OutputFormat;
 use rules::RulesFile;
 use runner::run_rule;
-use output::OutputFormat;
 
-use crate::{output::format_results, runner::{RuleResult, RuleStatus, run_sql}};
+use crate::{
+    output::format_results,
+    runner::{RuleResult, RuleStatus, run_sql},
+};
 
 #[derive(Parser)]
 #[command(name = "sentinel", about = "Data quality validation CLI")]
@@ -29,7 +32,8 @@ async fn main() {
     let args = Cli::parse();
     let content = std::fs::read_to_string(&args.rules).expect("Could not read rules file");
     let rules: RulesFile = serde_yaml::from_str(&content).expect("Could not parse the rules YAML");
-    let format: OutputFormat = args.format
+    let format: OutputFormat = args
+        .format
         .expect("Could not parse output format. Valid options are json or table");
     let ext = std::path::Path::new(&args.file)
         .extension()
@@ -47,13 +51,32 @@ async fn main() {
             .expect("Could not load Parquet file"),
         _ => panic!("Unsupported file format {}", ext),
     }
+    let schema_cols: Vec<String> = ctx
+        .table("data")
+        .await
+        .unwrap()
+        .schema()
+        .fields()
+        .iter()
+        .map(|c| c.name().clone())
+        .collect();
+    let missing_cols: Vec<String> = rules
+        .rules
+        .iter()
+        .map(|c| c.column.clone())
+        .filter(|c| !schema_cols.contains(c))
+        .collect();
+    if !missing_cols.is_empty() {
+        eprintln!("Invalid columns in rules: {}", missing_cols.join(", "));
+        std::process::exit(1);
+    }
     let mut any_failed = false;
     let total_rows = run_sql(&ctx, "SELECT COUNT(*) FROM data".into()).await;
     if total_rows == 0 {
         eprintln!("Input file is empty");
         std::process::exit(1);
     }
-    let mut results: Vec<RuleResult> = vec![];
+    let mut results: Vec<RuleResult> = Vec::new();
     for rule in &rules.rules {
         let result = match run_rule(&ctx, rule, total_rows).await {
             Ok(result) => result,

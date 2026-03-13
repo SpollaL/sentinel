@@ -113,3 +113,86 @@ pub async fn run_rule(
         violation_rate: violation_rate,
     })
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    async fn make_ctx(sql: &str) -> SessionContext {
+        let ctx = SessionContext::new();
+        ctx.sql(sql).await.unwrap().collect().await.unwrap();
+        ctx
+    }
+
+    fn make_rule(name: &str, column: &str, check: Check) -> Rule {
+        Rule {
+            name: name.to_string(),
+            column: column.to_string(),
+            check: check,
+            min: None,
+            max: None,
+            pattern: None,
+            threshold: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_not_null_fails_when_nulls_present() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1, 'alice'), (2, 'bob'), (NULL, 'carol')) AS t(age, name)").await;
+        let rule = make_rule("age_not_null", "age", Check::NotNull);
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.violations, 1)
+    }
+
+    #[tokio::test]
+    async fn test_not_null_pass_when_nulls_not_present() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1, 'alice'), (2, 'bob'), (NULL, 'carol')) AS t(age, name)").await;
+        let rule = make_rule("name_not_null", "name", Check::NotNull);
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Pass));
+        assert!(res.violations == 0)
+    }
+
+    #[tokio::test]
+    async fn test_min_fails_when_smaller_values_present() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (3, ''), (2, 'bob'), (4, 'carol')) AS t(age, name)").await;
+        let rule = Rule {
+            min: Some(3.0),
+            ..make_rule("age_gt_3", "age", Check::Min)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.violations, 1)
+    }
+
+    #[tokio::test]
+    async fn test_min_pass_when_smaller_values_not_present() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1, 'alice'), (2, 'bob'), (NULL, 'carol')) AS t(age, name)").await;
+        let rule = Rule {
+            min: Some(1.0),
+            ..make_rule("age_gt_1", "age", Check::Min)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Pass));
+        assert!(res.violations == 0)
+    }
+
+    #[tokio::test]
+    async fn test_not_empty_fails_when_empty_present() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1, ''), (2, 'bob'), (NULL, 'carol')) AS t(age, name)").await;
+        let rule = make_rule("name_not_empty", "name", Check::NotEmpty);
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.violations, 1)
+    }
+
+    #[tokio::test]
+    async fn test_not_em_pass_when_empty_not_present() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1, 'alice'), (2, 'bob'), (NULL, 'carol')) AS t(age, name)").await;
+        let rule = make_rule("name_not_empty", "name", Check::NotEmpty);
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Pass));
+        assert!(res.violations == 0)
+    }
+}

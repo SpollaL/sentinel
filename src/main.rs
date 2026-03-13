@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::Parser;
 use datafusion::prelude::*;
 
@@ -11,7 +12,7 @@ use runner::run_rule;
 
 use crate::{
     output::format_results,
-    runner::{RuleResult, RuleStatus, run_sql},
+    runner::{run_sql, RuleResult, RuleStatus},
 };
 
 #[derive(Parser)]
@@ -28,13 +29,14 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
-    let content = std::fs::read_to_string(&args.rules).expect("Could not read rules file");
-    let rules: RulesFile = serde_yaml::from_str(&content).expect("Could not parse the rules YAML");
+    let content = std::fs::read_to_string(&args.rules).context("Could not read rules file")?;
+    let rules: RulesFile =
+        serde_yaml::from_str(&content).context("Could not parse the rules YAML")?;
     let format: OutputFormat = args
         .format
-        .expect("Could not parse output format. Valid options are json or table");
+        .context("Could not parse output format. Valid options are json or table")?;
     let ext = std::path::Path::new(&args.file)
         .extension()
         .and_then(|e| e.to_str())
@@ -44,17 +46,17 @@ async fn main() {
         "csv" => ctx
             .register_csv("data", &args.file, CsvReadOptions::default())
             .await
-            .expect("Could not load CSV file"),
+            .context("Could not load CSV file")?,
         "parquet" => ctx
             .register_parquet("data", &args.file, ParquetReadOptions::default())
             .await
-            .expect("Could not load Parquet file"),
-        _ => panic!("Unsupported file format {}", ext),
+            .context("Could not load Parquet file")?,
+        _ => anyhow::bail!("Unsupported file format {}", ext),
     }
     let schema_cols: Vec<String> = ctx
         .table("data")
         .await
-        .unwrap()
+        .context("Could not read the table schema")?
         .schema()
         .fields()
         .iter()
@@ -71,7 +73,7 @@ async fn main() {
         std::process::exit(1);
     }
     let mut any_failed = false;
-    let total_rows = run_sql(&ctx, "SELECT COUNT(*) FROM data".into()).await;
+    let total_rows = run_sql(&ctx, "SELECT COUNT(*) FROM data".into()).await?;
     if total_rows == 0 {
         eprintln!("Input file is empty");
         std::process::exit(1);
@@ -95,4 +97,5 @@ async fn main() {
     if any_failed {
         std::process::exit(1);
     }
+    Ok(())
 }

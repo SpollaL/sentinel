@@ -1,7 +1,7 @@
 use comfy_table::Table;
 use serde::Deserialize;
 
-use crate::runner::RuleResult;
+use crate::runner::{RuleResult, RuleStatus};
 
 #[derive(Debug, Deserialize, Clone, clap::ValueEnum)]
 pub enum OutputFormat {
@@ -10,9 +10,26 @@ pub enum OutputFormat {
 }
 
 pub fn format_results(results: &[RuleResult], format: &OutputFormat) -> String {
+    let passed = results
+        .iter()
+        .filter(|r| matches!(r.status, RuleStatus::Pass))
+        .count();
+    let failed = results.len() - passed;
+    let summary = format!(
+        "{} passed, {} failed out of {}",
+        passed,
+        failed,
+        results.len()
+    );
     match format {
-        OutputFormat::Json => build_json(results),
-        OutputFormat::Table => build_table(results),
+        OutputFormat::Json => {
+            let mut out = build_json(results);
+            out.push_str(&format!("// {}\n", summary));
+            out
+        }
+        OutputFormat::Table => {
+            format!("{}\n{}", build_table(results), summary)
+        }
     }
 }
 
@@ -31,7 +48,7 @@ pub fn build_table(results: &[RuleResult]) -> String {
     results.iter().for_each(|res| {
         table.add_row([
             res.name.clone(),
-            format!("{:?}", res.status),
+            format!("{}", res.status),
             res.violations.to_string(),
             res.total_rows.to_string(),
             format!("{:.1}%", res.violation_rate * 100.0),

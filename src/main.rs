@@ -16,16 +16,19 @@ use crate::{
 };
 
 #[derive(Parser)]
-#[command(name = "sentinel", about = "Data quality validation CLI")]
+#[command(name = "sentinel", about = "Data quality validation CLI", version)]
 struct Cli {
-    ///Path to the dataset file
+    /// Path to the dataset file
     file: String,
-    ///Path to the rules YAML file
+    /// Path to the rules YAML file
     #[arg(short, long)]
     rules: String,
-    ///format output as a table
+    /// format output as a table
     #[arg(short, long, default_value = "json")]
     format: Option<OutputFormat>,
+    /// Validate rules file and schema without running checks
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[tokio::main]
@@ -71,6 +74,17 @@ async fn main() -> anyhow::Result<()> {
     if !missing_cols.is_empty() {
         eprintln!("Invalid columns in rules: {}", missing_cols.join(", "));
         std::process::exit(1);
+    }
+    if args.dry_run {
+        for rule in &rules.rules {
+            runner::validate_rule(rule)
+                .with_context(|| format!("Rule '{}' is invalid", rule.name))?;
+        }
+        println!(
+            "Rules file is valid. {} rules ready to run.",
+            rules.rules.len()
+        );
+        return Ok(());
     }
     let mut any_failed = false;
     let total_rows = run_sql(&ctx, "SELECT COUNT(*) FROM data".into()).await?;

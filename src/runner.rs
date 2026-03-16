@@ -78,6 +78,11 @@ fn build_sql(rule: &Rule) -> anyhow::Result<String> {
     }
 }
 
+pub fn validate_rule(rule: &Rule) -> anyhow::Result<()> {
+    build_sql(rule)?;
+    Ok(())
+}
+
 pub async fn run_sql(ctx: &SessionContext, sql: String) -> anyhow::Result<u64> {
     let df = ctx.sql(&sql).await.context("SQL query failed")?;
     let batches = df.collect().await.context("Failed to collect results")?;

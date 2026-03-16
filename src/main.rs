@@ -87,8 +87,7 @@ async fn run(args: Cli) -> anyhow::Result<()> {
         .filter(|c| !schema_cols.contains(c))
         .collect();
     if !missing_cols.is_empty() {
-        eprintln!("Invalid columns in rules: {}", missing_cols.join(", "));
-        std::process::exit(1);
+        anyhow::bail!("Invalid columns in rules: {}", missing_cols.join(", "));
     }
     runner::validate_threshold(&rules.rules)?;
     if args.dry_run {
@@ -105,18 +104,13 @@ async fn run(args: Cli) -> anyhow::Result<()> {
     let mut any_failed = false;
     let total_rows = run_sql(&ctx, "SELECT COUNT(*) FROM data".into()).await?;
     if total_rows == 0 {
-        eprintln!("Input file is empty");
-        std::process::exit(1);
+        anyhow::bail!("Input file is empty");
     }
     let mut results: Vec<RuleResult> = Vec::new();
     for rule in &rules.rules {
-        let result = match run_rule(&ctx, rule, total_rows).await {
-            Ok(result) => result,
-            Err(err) => {
-                eprintln!("INVALID {}: {}", rule.name, err);
-                std::process::exit(1);
-            }
-        };
+        let result = run_rule(&ctx, rule, total_rows)
+            .await
+            .with_context(|| format!("Rule '{}' failed to execute", rule.name))?;
         if matches!(result.status, RuleStatus::Fail) {
             any_failed = true;
         }

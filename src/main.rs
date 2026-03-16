@@ -29,11 +29,26 @@ struct Cli {
     /// Validate rules file and schema without running checks
     #[arg(long)]
     dry_run: bool,
+    /// Print full error chain on failure
+    #[arg(long)]
+    verbose: bool,
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
     let args = Cli::parse();
+    let verbose = args.verbose;
+    if let Err(e) = run(args).await {
+        if verbose {
+            eprintln!("Error: {e:?}");
+        } else {
+            eprintln!("Error: {e}");
+        }
+        std::process::exit(1);
+    }
+}
+
+async fn run(args: Cli) -> anyhow::Result<()> {
     let content = std::fs::read_to_string(&args.rules).context("Could not read rules file")?;
     let rules: RulesFile =
         serde_yaml::from_str(&content).context("Could not parse the rules YAML")?;

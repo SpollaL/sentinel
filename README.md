@@ -1,35 +1,37 @@
 # sentinel
 
+![CI](https://github.com/Spollal/sentinel/actions/workflows/ci.yml/badge.svg)
+
 A data quality validation CLI — define rules in YAML, run them against CSV or Parquet files.
 
-## Build
+## Install
 
 ```bash
-cargo build --release
+cargo install --path .
+```
+
+Or run directly without installing:
+
+```bash
+cargo run -- <data-file> --rules <rules-file>
 ```
 
 ## Usage
 
 ```bash
-cargo run -- <data-file> --rules <rules-file> [--format table]
-```
-
-Example:
-
-```bash
-cargo run -- data.csv --rules rules.yaml
-cargo run -- data.csv --rules rules.yaml --format table
+sentinel <data-file> --rules <rules-file> [--format table] [--dry-run]
 ```
 
 Sentinel exits with code `0` if all rules pass, `1` if any fail — making it easy to use in CI pipelines.
 
 ## Output
 
-By default sentinel outputs one JSON object per rule (JSONL):
+By default sentinel outputs one JSON object per rule (JSONL), followed by a summary:
 
 ```json
 {"name":"no_nulls_in_age","status":"pass","violations":0,"total_rows":100,"violation_rate":0.0}
 {"name":"age_is_positive","status":"fail","violations":3,"total_rows":100,"violation_rate":0.03}
+// 1 passed, 1 failed out of 2 rules
 ```
 
 Use `--format table` for a human-readable table:
@@ -41,7 +43,18 @@ Use `--format table` for a human-readable table:
 | no_nulls_in_age    | pass   | 0          | 100   | 0.0% |
 | age_is_positive    | fail   | 3          | 100   | 3.0% |
 +--------------------+--------+------------+-------+------+
+1 passed, 1 failed out of 2 rules
 ```
+
+## Dry run
+
+Use `--dry-run` to validate your rules file and data schema without running any checks:
+
+```bash
+sentinel data.csv --rules rules.yaml --dry-run
+```
+
+This loads the file, checks that all rule columns exist in the schema, and validates that each rule is well-formed (e.g. a `min` check has a `min` value). No queries are executed against the data.
 
 ## Rules file
 

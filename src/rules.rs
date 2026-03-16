@@ -13,7 +13,7 @@ pub struct Rule {
     pub min: Option<f64>,
     pub max: Option<f64>,
     pub pattern: Option<String>,
-    pub threshold: Option<f64>
+    pub threshold: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,4 +27,3 @@ pub enum Check {
     Unique,
     Regex,
 }
-

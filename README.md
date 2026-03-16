@@ -19,10 +19,12 @@ cargo run -- <data-file> --rules <rules-file>
 ## Usage
 
 ```bash
-sentinel <data-file> --rules <rules-file> [--format table] [--dry-run]
+sentinel <data-file> --rules <rules-file> [--format table] [--dry-run] [--verbose]
 ```
 
 Sentinel exits with code `0` if all rules pass, `1` if any fail — making it easy to use in CI pipelines.
+
+Use `--verbose` to print the full error chain on failure, useful for debugging rules.
 
 ## Output
 
@@ -99,7 +101,14 @@ rules:
     column: age
     check: not_null
     threshold: 0.05  # allow up to 5% nulls
+
+  - name: discount_exceeds_price
+    column: _unused  # column is required but ignored for custom checks
+    check: custom
+    sql: "SELECT COUNT(*) FROM data WHERE discount > price"
 ```
+
+> **Custom SQL contract**: the query must return a single integer representing the number of **violating rows** — not total rows, not a boolean. `threshold` works the same as for built-in checks.
 
 ## Supported checks
 
@@ -112,6 +121,7 @@ rules:
 | `between`   | All values must be between min and max       | `min`, `max`       |
 | `unique`    | Column must have no duplicate values         | —                  |
 | `regex`     | All values must match the pattern            | `pattern`          |
+| `custom`    | Run arbitrary SQL — must return the number of **violating** rows as a single integer | `sql` |
 
 ## Threshold
 

@@ -34,7 +34,7 @@ fn build_sql(rule: &Rule) -> anyhow::Result<String> {
         Check::NotNull => Ok(format!(
             "SELECT COUNT(*) FROM data WHERE \"{}\" IS NULL",
             rule.column
-        )),
+       )),
         Check::Min => {
             let thr = rule.min.context("Min check requires a min value")?;
             Ok(format!(
@@ -75,6 +75,10 @@ fn build_sql(rule: &Rule) -> anyhow::Result<String> {
                 "SELECT COUNT(*) FROM data WHERE REGEXP_MATCH(\"{}\", '{}') IS NULL",
                 rule.column, escaped
             ))
+        },
+        Check::Custom => {
+            let sql = rule.sql.clone().context("Custom check requires an sql value")?;
+            Ok(sql)
         }
     }
 }
@@ -154,6 +158,7 @@ mod test {
             max: None,
             pattern: None,
             threshold: None,
+            sql: None,
         }
     }
 
@@ -371,6 +376,30 @@ mod test {
         assert_eq!(res.violations, 1);
     }
 
+    #[tokio::test]
+    async fn test_custom_fails() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1, 'alice'), (2, 'bob'), (NULL, 'carol')) AS t(age, name)").await;
+        let rule = Rule {
+            sql: Some("SELECT COUNT(*) FROM data WHERE age IS NULL".into()),
+            ..make_rule("age_not_null", "age", Check::Custom)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.violations, 1)
+    }
+
+    #[tokio::test]
+    async fn test_custom_passes() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1, 'alice'), (2, 'bob'), (3, 'carol')) AS t(age, name)").await;
+        let rule = Rule {
+            sql: Some("SELECT COUNT(*) FROM data WHERE age IS NULL".into()),
+            ..make_rule("age_not_null", "age", Check::Custom)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Pass));
+        assert_eq!(res.violations, 0)
+    }
+
     #[test]
     fn test_threshold_above_one_is_invalid() {
         let rules = vec![Rule {
@@ -381,6 +410,7 @@ mod test {
             max: None,
             pattern: None,
             threshold: Some(1.5),
+            sql: None,
         }];
         assert!(validate_threshold(&rules).is_err());
     }
@@ -396,6 +426,7 @@ mod test {
                 max: None,
                 pattern: None,
                 threshold: Some(0.0),
+                sql: None,
             },
             Rule {
                 name: "b".to_string(),
@@ -405,6 +436,7 @@ mod test {
                 max: None,
                 pattern: None,
                 threshold: Some(1.0),
+                sql: None,
             },
         ];
         assert!(validate_threshold(&rules).is_ok());

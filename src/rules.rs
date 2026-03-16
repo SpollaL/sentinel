@@ -14,6 +14,7 @@ pub struct Rule {
     pub max: Option<f64>,
     pub pattern: Option<String>,
     pub threshold: Option<f64>,
+    pub sql: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -26,4 +27,5 @@ pub enum Check {
     Between,
     Unique,
     Regex,
+    Custom,
 }

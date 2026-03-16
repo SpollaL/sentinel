@@ -70,9 +70,10 @@ fn build_sql(rule: &Rule) -> anyhow::Result<String> {
                 .pattern
                 .clone()
                 .context("Regex check requires a pattern value")?;
+            let escaped = pattern.replace('\'', "''");
             Ok(format!(
                 "SELECT COUNT(*) FROM data WHERE REGEXP_MATCH(\"{}\", '{}') IS NULL",
-                rule.column, pattern
+                rule.column, escaped
             ))
         }
     }
@@ -338,5 +339,20 @@ mod test {
         let rule = make_rule("bad_rule", "name", Check::Regex); // no pattern set
         let res = run_rule(&ctx, &rule, 1).await;
         assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_regex_with_single_quote_in_pattern() {
+        let ctx = make_ctx(
+            "CREATE TABLE data AS SELECT * FROM (VALUES ('it''s valid'), ('nope')) AS t(name)",
+        )
+        .await;
+        let rule = Rule {
+            pattern: Some("it's".to_string()),
+            ..make_rule("quote_test", "name", Check::Regex)
+        };
+        let res = run_rule(&ctx, &rule, 2).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.violations, 1);
     }
 }

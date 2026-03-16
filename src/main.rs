@@ -75,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("Invalid columns in rules: {}", missing_cols.join(", "));
         std::process::exit(1);
     }
+    runner::validate_threshold(&rules.rules)?;
     if args.dry_run {
         for rule in &rules.rules {
             runner::validate_rule(rule)

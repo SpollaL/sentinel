@@ -84,6 +84,21 @@ pub fn validate_rule(rule: &Rule) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn validate_threshold(rules: &[Rule]) -> anyhow::Result<()> {
+    for rule in rules {
+        if let Some(t) = rule.threshold {
+            if !(0.0..=1.0).contains(&t) {
+                anyhow::bail!(
+                    "Rule '{}' has an invalid threshold {}: must be between 0.0 and 1.0",
+                    rule.name,
+                    t
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 pub async fn run_sql(ctx: &SessionContext, sql: String) -> anyhow::Result<u64> {
     let df = ctx.sql(&sql).await.context("SQL query failed")?;
     let batches = df.collect().await.context("Failed to collect results")?;
@@ -354,5 +369,44 @@ mod test {
         let res = run_rule(&ctx, &rule, 2).await.unwrap();
         assert!(matches!(res.status, RuleStatus::Fail));
         assert_eq!(res.violations, 1);
+    }
+
+    #[test]
+    fn test_threshold_above_one_is_invalid() {
+        let rules = vec![Rule {
+            name: "bad".to_string(),
+            column: "age".to_string(),
+            check: Check::NotNull,
+            min: None,
+            max: None,
+            pattern: None,
+            threshold: Some(1.5),
+        }];
+        assert!(validate_threshold(&rules).is_err());
+    }
+
+    #[test]
+    fn test_threshold_at_boundaries_is_valid() {
+        let rules = vec![
+            Rule {
+                name: "a".to_string(),
+                column: "x".to_string(),
+                check: Check::NotNull,
+                min: None,
+                max: None,
+                pattern: None,
+                threshold: Some(0.0),
+            },
+            Rule {
+                name: "b".to_string(),
+                column: "x".to_string(),
+                check: Check::NotNull,
+                min: None,
+                max: None,
+                pattern: None,
+                threshold: Some(1.0),
+            },
+        ];
+        assert!(validate_threshold(&rules).is_ok());
     }
 }

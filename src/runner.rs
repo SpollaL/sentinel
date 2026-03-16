@@ -107,10 +107,10 @@ pub async fn run_rule(
     };
     Ok(RuleResult {
         name: rule.name.clone(),
-        status: status,
-        violations: violations,
-        total_rows: total_rows,
-        violation_rate: violation_rate,
+        status,
+        violations,
+        total_rows,
+        violation_rate,
     })
 }
 
@@ -194,5 +194,144 @@ mod test {
         let res = run_rule(&ctx, &rule, 3).await.unwrap();
         assert!(matches!(res.status, RuleStatus::Pass));
         assert!(res.violations == 0)
+    }
+
+    #[tokio::test]
+    async fn test_max_fails_when_larger_values_present() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (3, ''), (2, 'bob'), (4, 'carol')) AS t(age, name)").await;
+        let rule = Rule {
+            max: Some(2.0),
+            ..make_rule("age_st_2", "age", Check::Max)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.violations, 2)
+    }
+
+    #[tokio::test]
+    async fn test_max_pass_when_larger_values_not_present() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1, 'alice'), (2, 'bob'), (NULL, 'carol')) AS t(age, name)").await;
+        let rule = Rule {
+            max: Some(2.0),
+            ..make_rule("age_st_2", "age", Check::Max)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Pass));
+        assert!(res.violations == 0)
+    }
+
+    #[tokio::test]
+    async fn test_between_fails_when_out_of_range() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (5), (10)) AS t(age)").await;
+        let rule = Rule {
+            min: Some(2.0),
+            max: Some(8.0),
+            ..make_rule("age_between", "age", Check::Between)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.violations, 2); // 1 and 10 are out of range
+    }
+
+    #[tokio::test]
+    async fn test_between_passes_when_all_in_range() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (3), (5), (7)) AS t(age)").await;
+        let rule = Rule {
+            min: Some(1.0),
+            max: Some(10.0),
+            ..make_rule("age_between", "age", Check::Between)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Pass));
+        assert_eq!(res.violations, 0);
+    }
+
+    #[tokio::test]
+    async fn test_unique_fails_when_duplicates_present() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES ('a'), ('b'), ('a')) AS t(name)")
+                .await;
+        let rule = make_rule("name_unique", "name", Check::Unique);
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.violations, 2); // both 'a' rows are duplicates
+    }
+
+    #[tokio::test]
+    async fn test_unique_passes_when_all_distinct() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES ('a'), ('b'), ('c')) AS t(name)")
+                .await;
+        let rule = make_rule("name_unique", "name", Check::Unique);
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Pass));
+        assert_eq!(res.violations, 0);
+    }
+
+    #[tokio::test]
+    async fn test_regex_fails_when_pattern_not_matched() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES ('foo@bar.com'), ('notanemail')) AS t(email)").await;
+        let rule = Rule {
+            pattern: Some("^[^@]+@[^@]+$".to_string()),
+            ..make_rule("email_regex", "email", Check::Regex)
+        };
+        let res = run_rule(&ctx, &rule, 2).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.violations, 1);
+    }
+
+    #[tokio::test]
+    async fn test_regex_passes_when_all_match() {
+        let ctx = make_ctx(
+            "CREATE TABLE data AS SELECT * FROM (VALUES ('foo@bar.com'), ('x@y.com')) AS t(email)",
+        )
+        .await;
+        let rule = Rule {
+            pattern: Some("^[^@]+@[^@]+$".to_string()),
+            ..make_rule("email_regex", "email", Check::Regex)
+        };
+        let res = run_rule(&ctx, &rule, 2).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Pass));
+        assert_eq!(res.violations, 0);
+    }
+
+    #[tokio::test]
+    async fn test_threshold_allows_tolerance() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (2), (NULL)) AS t(age)")
+                .await;
+        let rule = Rule {
+            threshold: Some(0.5), // allow up to 50% nulls — 1/3 = 33% should pass
+            ..make_rule("age_not_null", "age", Check::NotNull)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Pass));
+    }
+
+    #[tokio::test]
+    async fn test_min_without_min_value_returns_error() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1)) AS t(age)").await;
+        let rule = make_rule("bad_rule", "age", Check::Min); // no min set
+        let res = run_rule(&ctx, &rule, 1).await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_max_without_max_value_returns_error() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1)) AS t(age)").await;
+        let rule = make_rule("bad_rule", "age", Check::Max); // no max set
+        let res = run_rule(&ctx, &rule, 1).await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_regex_without_pattern_returns_error() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES ('hello')) AS t(name)").await;
+        let rule = make_rule("bad_rule", "name", Check::Regex); // no pattern set
+        let res = run_rule(&ctx, &rule, 1).await;
+        assert!(res.is_err());
     }
 }

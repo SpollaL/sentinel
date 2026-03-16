@@ -37,7 +37,7 @@ pub fn build_json(results: &[RuleResult]) -> String {
     let mut out: String = String::new();
     results.iter().for_each(|res| {
         out.push_str(&serde_json::to_string(res).expect("Failed to serialize"));
-        out.push_str("\n")
+        out.push('\n')
     });
     out
 }

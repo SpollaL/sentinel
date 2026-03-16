@@ -2,6 +2,12 @@
 name = "sentinel"
 version = "0.1.0"
 edition = "2021"
+authors = ["Spollal"]
+description = "Data quality validation CLI for CSV and Parquet files"
+license = "MIT"
+repository = "https://github.com/Spollal/sentinel"
+keywords = ["data-quality", "validation", "cli", "csv", "parquet"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

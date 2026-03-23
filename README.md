@@ -16,6 +16,12 @@ Or run directly without installing:
 cargo run -- <data-file> --rules <rules-file>
 ```
 
+Try the included examples:
+
+```bash
+sentinel examples/data.csv --rules examples/rules.yaml --format table
+```
+
 ## Usage
 
 ```bash

@@ -144,3 +144,46 @@ All rules support an optional `threshold` field — a violation rate (0.0 to 1.0
 
 - CSV (`.csv`)
 - Parquet (`.parquet`)
+
+## Cloud storage
+
+Sentinel can read files directly from Azure Blob Storage and Amazon S3. Credentials are read from environment variables — no code changes needed.
+
+### Azure Blob Storage
+
+Use the `az://` scheme:
+
+```bash
+sentinel az://my-container/path/to/data.csv --rules rules.yaml
+```
+
+Set these environment variables before running:
+
+| Variable | Description |
+|---|---|
+| `AZURE_STORAGE_ACCOUNT_NAME` | Storage account name |
+| `AZURE_STORAGE_ACCOUNT_KEY` | Storage account key |
+
+Or use a connection string:
+
+| Variable | Description |
+|---|---|
+| `AZURE_STORAGE_CONNECTION_STRING` | Full connection string |
+
+### Amazon S3
+
+Use the `s3://` scheme:
+
+```bash
+sentinel s3://my-bucket/path/to/data.parquet --rules rules.yaml
+```
+
+Set these environment variables before running:
+
+| Variable | Description |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | AWS access key |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key |
+| `AWS_DEFAULT_REGION` | Bucket region (e.g. `us-east-1`) |
+
+For S3-compatible stores (MinIO, etc.), also set `AWS_ENDPOINT` to point to your endpoint.

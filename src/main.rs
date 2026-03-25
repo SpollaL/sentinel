@@ -5,10 +5,12 @@ use datafusion::prelude::*;
 mod output;
 mod rules;
 mod runner;
+mod storage;
 
 use output::OutputFormat;
 use rules::RulesFile;
 use runner::run_rule;
+use storage::register_data;
 
 use crate::{
     output::format_results,
@@ -55,22 +57,8 @@ async fn run(args: Cli) -> anyhow::Result<()> {
     let format: OutputFormat = args
         .format
         .context("Could not parse output format. Valid options are json or table")?;
-    let ext = std::path::Path::new(&args.file)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
     let ctx = SessionContext::new();
-    match ext {
-        "csv" => ctx
-            .register_csv("data", &args.file, CsvReadOptions::default())
-            .await
-            .context("Could not load CSV file")?,
-        "parquet" => ctx
-            .register_parquet("data", &args.file, ParquetReadOptions::default())
-            .await
-            .context("Could not load Parquet file")?,
-        _ => anyhow::bail!("Unsupported file format {}", ext),
-    }
+    register_data(&ctx, &args.file).await?;
     let schema_cols: Vec<String> = ctx
         .table("data")
         .await

@@ -18,4 +18,10 @@ datafusion = "43"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 comfy-table = "7"
 anyhow = "1"
+object_store = { version = "0.11", features = ["azure"] }
+url = "2"
+
+[dev-dependencies]
+azure_storage = "0.20"
+azure_storage_blobs = "0.20"
 

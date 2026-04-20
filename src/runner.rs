@@ -153,7 +153,7 @@ mod test {
         Rule {
             name: name.to_string(),
             column: column.to_string(),
-            check: check,
+            check,
             min: None,
             max: None,
             pattern: None,

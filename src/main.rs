@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::Parser;
 use datafusion::prelude::*;
+use tracing_subscriber::EnvFilter;
 
 mod output;
 mod rules;
@@ -38,6 +39,11 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .init();
+
     let args = Cli::parse();
     let verbose = args.verbose;
     if let Err(e) = run(args).await {

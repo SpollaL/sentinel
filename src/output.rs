@@ -36,8 +36,10 @@ pub fn format_results(results: &[RuleResult], format: &OutputFormat) -> String {
 pub fn build_json(results: &[RuleResult]) -> String {
     let mut out: String = String::new();
     results.iter().for_each(|res| {
-        out.push_str(&serde_json::to_string(res).expect("Failed to serialize"));
-        out.push('\n')
+        if let Ok(line) = serde_json::to_string(res) {
+            out.push_str(&line);
+            out.push('\n');
+        }
     });
     out
 }

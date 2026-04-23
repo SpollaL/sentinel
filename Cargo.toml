@@ -10,7 +10,7 @@ keywords = ["data-quality", "validation", "cli", "csv", "parquet"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1"

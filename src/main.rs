@@ -154,7 +154,7 @@ async fn run(args: Cli) -> anyhow::Result<i32> {
         .map_err(|e| ExitCodeError::new(4, e))?;
 
     if total_rows == 0 {
-        return Err(ExitCodeError::new(4, anyhow::anyhow!("Input file is empty")).into());
+        return Err(ExitCodeError::new(1, anyhow::anyhow!("Input file is empty")).into());
     }
 
     let mut results: Vec<RuleResult> = Vec::new();
@@ -192,7 +192,7 @@ impl std::fmt::Display for ExitCodeError {
 
 impl std::error::Error for ExitCodeError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.inner.source()
+        Some(self.inner.as_ref())
     }
 }
 

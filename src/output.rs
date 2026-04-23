@@ -45,16 +45,65 @@ pub fn build_json(results: &[RuleResult]) -> String {
 }
 
 pub fn build_table(results: &[RuleResult]) -> String {
+    let has_samples = results
+        .iter()
+        .any(|r| r.sample_rows.as_ref().is_some_and(|s| !s.is_empty()));
+
     let mut table = Table::new();
-    table.set_header(["RULE", "STATUS", "VIOLATIONS", "TOTAL", "RATE"]);
-    results.iter().for_each(|res| {
-        table.add_row([
-            res.name.clone(),
-            format!("{}", res.status),
-            res.violations.to_string(),
-            res.total_rows.to_string(),
-            format!("{:.1}%", res.violation_rate * 100.0),
+    if has_samples {
+        table.set_header([
+            "RULE",
+            "STATUS",
+            "VIOLATIONS",
+            "TOTAL",
+            "RATE",
+            "SAMPLE VIOLATIONS",
         ]);
+    } else {
+        table.set_header(["RULE", "STATUS", "VIOLATIONS", "TOTAL", "RATE"]);
+    }
+    results.iter().for_each(|res| {
+        if has_samples {
+            let sample_str = match &res.sample_rows {
+                Some(rows) if !rows.is_empty() => {
+                    let parts: Vec<String> = rows
+                        .iter()
+                        .map(|row| {
+                            // Render each row as compact JSON; truncate long values
+                            let s = serde_json::to_string(row).unwrap_or_default();
+                            if s.len() > 60 {
+                                format!("{}…", &s[..60])
+                            } else {
+                                s
+                            }
+                        })
+                        .collect();
+                    let joined = parts.join(", ");
+                    if joined.len() > 120 {
+                        format!("{}…", &joined[..120])
+                    } else {
+                        joined
+                    }
+                }
+                _ => String::new(),
+            };
+            table.add_row([
+                res.name.clone(),
+                format!("{}", res.status),
+                res.violations.to_string(),
+                res.total_rows.to_string(),
+                format!("{:.1}%", res.violation_rate * 100.0),
+                sample_str,
+            ]);
+        } else {
+            table.add_row([
+                res.name.clone(),
+                format!("{}", res.status),
+                res.violations.to_string(),
+                res.total_rows.to_string(),
+                format!("{:.1}%", res.violation_rate * 100.0),
+            ]);
+        }
     });
     table.to_string()
 }

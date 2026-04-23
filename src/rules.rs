@@ -1,4 +1,25 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+
+/// Severity level for a rule.
+///
+/// `Error` (default) causes the pipeline to fail with exit code 1.
+/// `Warning` prints a notice but does not affect the exit code beyond code 2.
+#[derive(Debug, Default, Deserialize, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    #[default]
+    Error,
+    Warning,
+}
+
+impl std::fmt::Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Severity::Error => write!(f, "error"),
+            Severity::Warning => write!(f, "warning"),
+        }
+    }
+}
 
 /// Top-level structure of a rules YAML file.
 #[derive(Debug, Deserialize)]
@@ -7,7 +28,7 @@ pub struct RulesFile {
 }
 
 /// A single data-quality rule targeting one column.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Rule {
     /// Human-readable name shown in output.
     pub name: String,
@@ -24,10 +45,13 @@ pub struct Rule {
     pub threshold: Option<f64>,
     /// Full SQL expression used by the `custom` check.
     pub sql: Option<String>,
+    /// Severity of this rule. Defaults to `error`.
+    #[serde(default)]
+    pub severity: Severity,
 }
 
 /// The type of check to perform on a column.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum Check {
     /// Fails if any value in the column is NULL.
@@ -46,4 +70,62 @@ pub enum Check {
     Regex,
     /// Executes `rule.sql` directly; the query must return a single violation count.
     Custom,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_rule(yaml: &str) -> Rule {
+        let rules_file: RulesFile = serde_yaml::from_str(yaml).expect("valid YAML");
+        rules_file
+            .rules
+            .into_iter()
+            .next()
+            .expect("at least one rule")
+    }
+
+    #[test]
+    fn test_severity_defaults_to_error_when_omitted() {
+        let yaml = r#"
+rules:
+  - name: no_nulls
+    column: id
+    check: not_null
+"#;
+        let rule = parse_rule(yaml);
+        assert_eq!(rule.severity, Severity::Error);
+    }
+
+    #[test]
+    fn test_severity_warning_parses_correctly() {
+        let yaml = r#"
+rules:
+  - name: phone_format
+    column: phone
+    check: not_null
+    severity: warning
+"#;
+        let rule = parse_rule(yaml);
+        assert_eq!(rule.severity, Severity::Warning);
+    }
+
+    #[test]
+    fn test_severity_error_parses_correctly() {
+        let yaml = r#"
+rules:
+  - name: no_nulls
+    column: id
+    check: not_null
+    severity: error
+"#;
+        let rule = parse_rule(yaml);
+        assert_eq!(rule.severity, Severity::Error);
+    }
+
+    #[test]
+    fn test_severity_display() {
+        assert_eq!(Severity::Error.to_string(), "error");
+        assert_eq!(Severity::Warning.to_string(), "warning");
+    }
 }

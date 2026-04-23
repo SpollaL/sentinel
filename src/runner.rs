@@ -1,4 +1,4 @@
-use crate::rules::{Check, Rule};
+use crate::rules::{Check, Rule, Severity};
 use anyhow::Context;
 use datafusion::arrow::array::Int64Array;
 use datafusion::prelude::*;
@@ -24,6 +24,7 @@ impl std::fmt::Display for RuleStatus {
 pub struct RuleResult {
     pub name: String,
     pub status: RuleStatus,
+    pub severity: Severity,
     pub violations: u64,
     pub total_rows: u64,
     pub violation_rate: f64,
@@ -133,6 +134,7 @@ pub async fn run_rule(
     Ok(RuleResult {
         name: rule.name.clone(),
         status,
+        severity: rule.severity.clone(),
         violations,
         total_rows,
         violation_rate,
@@ -159,6 +161,7 @@ mod test {
             pattern: None,
             threshold: None,
             sql: None,
+            severity: Severity::Error,
         }
     }
 
@@ -411,6 +414,7 @@ mod test {
             pattern: None,
             threshold: Some(1.5),
             sql: None,
+            severity: Severity::Error,
         }];
         assert!(validate_threshold(&rules).is_err());
     }
@@ -427,6 +431,7 @@ mod test {
                 pattern: None,
                 threshold: Some(0.0),
                 sql: None,
+                severity: Severity::Error,
             },
             Rule {
                 name: "b".to_string(),
@@ -437,8 +442,52 @@ mod test {
                 pattern: None,
                 threshold: Some(1.0),
                 sql: None,
+                severity: Severity::Error,
             },
         ];
         assert!(validate_threshold(&rules).is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_warning_rule_with_violations_has_fail_status_and_warning_severity() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (2), (NULL)) AS t(age)")
+                .await;
+        let rule = Rule {
+            severity: Severity::Warning,
+            ..make_rule("age_not_null", "age", Check::NotNull)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.severity, Severity::Warning);
+        assert_eq!(res.violations, 1);
+    }
+
+    #[tokio::test]
+    async fn test_error_rule_with_violations_has_fail_status_and_error_severity() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (2), (NULL)) AS t(age)")
+                .await;
+        let rule = Rule {
+            severity: Severity::Error,
+            ..make_rule("age_not_null", "age", Check::NotNull)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Fail));
+        assert_eq!(res.severity, Severity::Error);
+        assert_eq!(res.violations, 1);
+    }
+
+    #[tokio::test]
+    async fn test_severity_propagates_to_result_on_pass() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (2), (3)) AS t(age)").await;
+        let rule = Rule {
+            severity: Severity::Warning,
+            ..make_rule("age_not_null", "age", Check::NotNull)
+        };
+        let res = run_rule(&ctx, &rule, 3).await.unwrap();
+        assert!(matches!(res.status, RuleStatus::Pass));
+        assert_eq!(res.severity, Severity::Warning);
     }
 }

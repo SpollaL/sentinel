@@ -46,11 +46,12 @@ pub fn build_json(results: &[RuleResult]) -> String {
 
 pub fn build_table(results: &[RuleResult]) -> String {
     let mut table = Table::new();
-    table.set_header(["RULE", "STATUS", "VIOLATIONS", "TOTAL", "RATE"]);
+    table.set_header(["RULE", "STATUS", "SEVERITY", "VIOLATIONS", "TOTAL", "RATE"]);
     results.iter().for_each(|res| {
         table.add_row([
             res.name.clone(),
             format!("{}", res.status),
+            format!("{}", res.severity),
             res.violations.to_string(),
             res.total_rows.to_string(),
             format!("{:.1}%", res.violation_rate * 100.0),

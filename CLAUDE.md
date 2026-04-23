@@ -2,12 +2,12 @@
 
 ## After implementing any feature
 
-Always update docs before closing the task:
+Update docs before closing task:
 
-1. **README.md** — add or update the relevant section (usage, flags, output format, examples). If a flag or subcommand changes its interface, update all code blocks that reference it.
-2. **CHANGELOG.md** — add a bullet under `## [Unreleased]` describing what was added, changed, or fixed. One bullet per logical change.
+1. **README.md** — add/update relevant section (usage, flags, output format, examples). Flag or subcommand interface changes → update all referencing code blocks.
+2. **CHANGELOG.md** — bullet under `## [Unreleased]`: what added, changed, fixed. One bullet per logical change.
 
-This applies to every PR, no matter how small. A flag with no docs is a feature that doesn't exist to users.
+Every PR, no matter how small. Flag with no docs = feature that don't exist to users.
 
 ## Project layout
 
@@ -31,7 +31,7 @@ This applies to every PR, no matter how small. A flag with no docs is a feature 
 
 ## Testing
 
-Run `cargo test` — all tests are unit/integration tests in-process using DataFusion in-memory tables. Cloud storage tests (`test_azure_csv_source`, `test_s3_csv_source`) are ignored by default; they require live credentials.
+Run `cargo test` — unit/integration tests in-process, DataFusion in-memory tables. Cloud storage tests (`test_azure_csv_source`, `test_s3_csv_source`) ignored by default; need live credentials.
 
 ## CI
 

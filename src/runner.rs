@@ -285,28 +285,44 @@ pub async fn fetch_violation_samples(
                         if col.is_null(row_idx) {
                             JsonValue::Null
                         } else {
-                            json!(col.as_any().downcast_ref::<UInt8Array>().unwrap().value(row_idx))
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<UInt8Array>()
+                                .unwrap()
+                                .value(row_idx))
                         }
                     }
                     DataType::UInt16 => {
                         if col.is_null(row_idx) {
                             JsonValue::Null
                         } else {
-                            json!(col.as_any().downcast_ref::<UInt16Array>().unwrap().value(row_idx))
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<UInt16Array>()
+                                .unwrap()
+                                .value(row_idx))
                         }
                     }
                     DataType::UInt32 => {
                         if col.is_null(row_idx) {
                             JsonValue::Null
                         } else {
-                            json!(col.as_any().downcast_ref::<UInt32Array>().unwrap().value(row_idx))
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<UInt32Array>()
+                                .unwrap()
+                                .value(row_idx))
                         }
                     }
                     DataType::UInt64 => {
                         if col.is_null(row_idx) {
                             JsonValue::Null
                         } else {
-                            json!(col.as_any().downcast_ref::<UInt64Array>().unwrap().value(row_idx))
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<UInt64Array>()
+                                .unwrap()
+                                .value(row_idx))
                         }
                     }
                     DataType::Boolean => {

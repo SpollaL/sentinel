@@ -274,7 +274,10 @@ async fn run_validate(args: ValidateArgs) -> anyhow::Result<i32> {
                 .with_context(|| format!("Rule '{}' is invalid", rule.name))
                 .map_err(|e| ExitCodeError::new(3, e))?;
         }
-        println!("Rules file is valid. {} rules ready to run.", rules.rules.len());
+        println!(
+            "Rules file is valid. {} rules ready to run.",
+            rules.rules.len()
+        );
         return Ok(0);
     }
 

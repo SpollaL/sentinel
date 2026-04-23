@@ -61,7 +61,15 @@ pub fn build_table(results: &[RuleResult]) -> String {
 
     let mut table = Table::new();
     if has_samples {
-        table.set_header(["RULE", "STATUS", "SEVERITY", "VIOLATIONS", "TOTAL", "RATE", "SAMPLE VIOLATIONS"]);
+        table.set_header([
+            "RULE",
+            "STATUS",
+            "SEVERITY",
+            "VIOLATIONS",
+            "TOTAL",
+            "RATE",
+            "SAMPLE VIOLATIONS",
+        ]);
     } else {
         table.set_header(["RULE", "STATUS", "SEVERITY", "VIOLATIONS", "TOTAL", "RATE"]);
     }

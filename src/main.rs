@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::Parser;
 use datafusion::prelude::*;
+use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
 mod output;
@@ -10,12 +11,12 @@ mod storage;
 
 use output::OutputFormat;
 use rules::{RulesFile, Severity};
-use runner::{fetch_violation_samples, run_rule};
+use runner::fetch_violation_samples;
 use storage::register_data;
 
 use crate::{
     output::format_results,
-    runner::{run_sql, RuleResult, RuleStatus},
+    runner::{run_rules_parallel, run_sql, RuleResult, RuleStatus},
 };
 
 #[derive(Parser)]
@@ -104,7 +105,7 @@ async fn run(args: Cli) -> anyhow::Result<i32> {
         .context("Could not parse output format. Valid options are json or table")
         .map_err(|e| ExitCodeError::new(3, e))?;
 
-    let ctx = SessionContext::new();
+    let ctx = Arc::new(SessionContext::new());
 
     // Exit code 4: data file not found or unreadable
     register_data(&ctx, &args.file)
@@ -160,13 +161,12 @@ async fn run(args: Cli) -> anyhow::Result<i32> {
         return Err(ExitCodeError::new(1, anyhow::anyhow!("Input file is empty")).into());
     }
 
-    let mut results: Vec<RuleResult> = Vec::new();
-    for rule in &rules.rules {
-        let mut result = run_rule(&ctx, rule, total_rows)
-            .await
-            .with_context(|| format!("Rule '{}' failed to execute", rule.name))?;
-        if matches!(result.status, RuleStatus::Fail) {
-            if let Some(limit) = args.show_violations {
+    let mut results: Vec<RuleResult> =
+        run_rules_parallel(Arc::clone(&ctx), rules.rules.clone(), total_rows).await?;
+
+    if let Some(limit) = args.show_violations {
+        for (rule, result) in rules.rules.iter().zip(results.iter_mut()) {
+            if matches!(result.status, RuleStatus::Fail) {
                 let samples = fetch_violation_samples(&ctx, rule, limit)
                     .await
                     .with_context(|| {
@@ -175,7 +175,6 @@ async fn run(args: Cli) -> anyhow::Result<i32> {
                 result.sample_rows = Some(samples);
             }
         }
-        results.push(result);
     }
 
     let out = format_results(&results, &format);

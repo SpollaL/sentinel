@@ -113,7 +113,7 @@ mod test {
             sql: None,
             severity: Severity::Error,
         };
-        let result = run_rule(&ctx, &rule, 3).await.unwrap();
+        let result = run_rule(Arc::new(ctx), &rule, 3).await.unwrap();
         assert!(matches!(result.status, RuleStatus::Fail));
         assert_eq!(result.violations, 1);
     }
@@ -172,7 +172,7 @@ mod test {
             sql: None,
             severity: Severity::Error,
         };
-        let result = run_rule(&ctx, &rule, 3).await.unwrap();
+        let result = run_rule(Arc::new(ctx), &rule, 3).await.unwrap();
         assert!(matches!(result.status, RuleStatus::Fail));
         assert_eq!(result.violations, 1);
     }

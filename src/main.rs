@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::Parser;
 use datafusion::prelude::*;
+use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
 mod output;
@@ -10,12 +11,11 @@ mod storage;
 
 use output::OutputFormat;
 use rules::RulesFile;
-use runner::run_rule;
 use storage::register_data;
 
 use crate::{
     output::format_results,
-    runner::{run_sql, RuleResult, RuleStatus},
+    runner::{run_rules_parallel, run_sql, RuleResult, RuleStatus},
 };
 
 #[derive(Parser)]
@@ -63,7 +63,7 @@ async fn run(args: Cli) -> anyhow::Result<()> {
     let format: OutputFormat = args
         .format
         .context("Could not parse output format. Valid options are json or table")?;
-    let ctx = SessionContext::new();
+    let ctx = Arc::new(SessionContext::new());
     register_data(&ctx, &args.file).await?;
     let schema_cols: Vec<String> = ctx
         .table("data")
@@ -95,21 +95,13 @@ async fn run(args: Cli) -> anyhow::Result<()> {
         );
         return Ok(());
     }
-    let mut any_failed = false;
     let total_rows = run_sql(&ctx, "SELECT COUNT(*) FROM data".into()).await?;
     if total_rows == 0 {
         anyhow::bail!("Input file is empty");
     }
-    let mut results: Vec<RuleResult> = Vec::new();
-    for rule in &rules.rules {
-        let result = run_rule(&ctx, rule, total_rows)
-            .await
-            .with_context(|| format!("Rule '{}' failed to execute", rule.name))?;
-        if matches!(result.status, RuleStatus::Fail) {
-            any_failed = true;
-        }
-        results.push(result);
-    }
+    let results: Vec<RuleResult> =
+        run_rules_parallel(Arc::clone(&ctx), rules.rules, total_rows).await?;
+    let any_failed = results.iter().any(|r| matches!(r.status, RuleStatus::Fail));
     let out = format_results(&results, &format);
     println!("{}", out);
     if any_failed {

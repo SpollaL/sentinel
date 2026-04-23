@@ -7,7 +7,7 @@ pub struct RulesFile {
 }
 
 /// A single data-quality rule targeting one column.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Rule {
     /// Human-readable name shown in output.
     pub name: String,
@@ -27,7 +27,7 @@ pub struct Rule {
 }
 
 /// The type of check to perform on a column.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Check {
     /// Fails if any value in the column is NULL.

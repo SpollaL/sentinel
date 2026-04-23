@@ -99,7 +99,7 @@ mod test {
             .unwrap();
 
         // 4. run a rule and assert
-        use crate::rules::{Check, Rule};
+        use crate::rules::{Check, Rule, Severity};
         use crate::runner::{run_rule, RuleStatus};
 
         let rule = Rule {
@@ -111,6 +111,7 @@ mod test {
             pattern: None,
             threshold: None,
             sql: None,
+            severity: Severity::Error,
         };
         let result = run_rule(&ctx, &rule, 3).await.unwrap();
         assert!(matches!(result.status, RuleStatus::Fail));
@@ -157,7 +158,7 @@ mod test {
             .unwrap();
 
         // 4. Run a rule and assert
-        use crate::rules::{Check, Rule};
+        use crate::rules::{Check, Rule, Severity};
         use crate::runner::{run_rule, RuleStatus};
 
         let rule = Rule {
@@ -169,6 +170,7 @@ mod test {
             pattern: None,
             threshold: None,
             sql: None,
+            severity: Severity::Error,
         };
         let result = run_rule(&ctx, &rule, 3).await.unwrap();
         assert!(matches!(result.status, RuleStatus::Fail));

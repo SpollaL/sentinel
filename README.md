@@ -24,7 +24,7 @@ sentinel validate examples/data.csv --rules examples/rules.yaml --format table
 
 ## Commands
 
-Sentinel has two subcommands: `validate` and `schema`.
+Sentinel has three subcommands: `validate`, `schema`, and `profile`.
 
 ### validate
 
@@ -43,6 +43,46 @@ sentinel validate <data-file> --rules <rules-file> [OPTIONS]
 | `--show-violations [N]` | Attach first N violating rows to each failed rule (default 5) |
 | `--agent` | Stream JSON Lines output for machine consumption (see Agent mode) |
 
+### profile
+
+Profile a dataset — no rules file needed. Prints per-column stats and emits a ready-to-use `rules.yaml` block you can paste straight into a rules file.
+
+```bash
+sentinel profile <data-file>
+```
+
+```
+Column: age
+  type:        int64
+  nulls:       0 (0.0%)
+  unique:      71
+  min:         18
+  max:         92
+  mean:        34.70
+
+---
+Suggested rules (1000 rows):
+
+rules:
+- name: age_not_null
+  column: age
+  check: not_null
+- name: age_range
+  column: age
+  check: between
+  min: 18.0
+  max: 92.0
+- name: age_unique
+  column: age
+  check: unique
+```
+
+Rule suggestion logic:
+- **`not_null`** — suggested for any column with 0% nulls (error severity)
+- **`not_null` + threshold** — suggested for columns with ≤ 20% nulls (warning severity, threshold = observed null rate rounded up)
+- **`between`** — suggested for numeric columns using observed min/max as bounds
+- **`unique`** — suggested when all values in the column are distinct
+
 ### schema
 
 Inspect the schema and basic stats of a dataset — no rules file needed.
@@ -51,12 +91,12 @@ Inspect the schema and basic stats of a dataset — no rules file needed.
 sentinel schema <data-file>
 ```
 
-Outputs JSON with per-column info (type, null count, distinct count, min/max for numeric columns) and total row count:
+Outputs JSON with per-column info (type, null count, distinct count, min/max/mean for numeric columns) and total row count:
 
 ```json
 {
   "columns": [
-    { "name": "age",  "type": "int64",  "nulls": 2,  "unique": 87, "min": 18.0, "max": 99.0 },
+    { "name": "age",  "type": "int64",  "nulls": 2,  "unique": 87, "min": 18.0, "max": 99.0, "mean": 34.7 },
     { "name": "name", "type": "utf8",   "nulls": 0,  "unique": 100 },
     { "name": "flag", "type": "bool",   "nulls": 1,  "unique": 2 }
   ],

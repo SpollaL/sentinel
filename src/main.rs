@@ -6,6 +6,7 @@ use std::time::Instant;
 use tracing_subscriber::EnvFilter;
 
 mod output;
+mod profile;
 mod rules;
 mod runner;
 mod schema;
@@ -38,6 +39,8 @@ enum Commands {
     Validate(ValidateArgs),
     /// Show schema and stats for a dataset
     Schema(SchemaArgs),
+    /// Profile a dataset and suggest starter rules
+    Profile(ProfileArgs),
 }
 
 #[derive(Args)]
@@ -66,6 +69,12 @@ struct ValidateArgs {
 
 #[derive(Args)]
 struct SchemaArgs {
+    /// Path to the dataset file (CSV or Parquet)
+    file: String,
+}
+
+#[derive(Args)]
+struct ProfileArgs {
     /// Path to the dataset file (CSV or Parquet)
     file: String,
 }
@@ -169,6 +178,12 @@ async fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Profile(args) => {
+            if let Err(e) = run_profile(args).await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -205,6 +220,20 @@ async fn run_schema(args: SchemaArgs) -> anyhow::Result<()> {
     let output = schema::introspect(&ctx, "data").await?;
     let json = serde_json::to_string_pretty(&output).context("Could not serialize schema")?;
     println!("{json}");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Profile subcommand
+// ---------------------------------------------------------------------------
+
+async fn run_profile(args: ProfileArgs) -> anyhow::Result<()> {
+    let ctx = SessionContext::new();
+    register_data(&ctx, &args.file).await?;
+    let schema_output = schema::introspect(&ctx, "data").await?;
+    let rules = profile::generate_suggested_rules(&schema_output);
+    let text = profile::format_profile_text(&schema_output, &rules);
+    print!("{text}");
     Ok(())
 }
 

@@ -14,6 +14,8 @@ pub struct ColumnInfo {
     pub min: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mean: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -71,6 +73,30 @@ async fn run_count_sql(ctx: &SessionContext, sql: &str) -> anyhow::Result<u64> {
         .context("Expected Int64 column")?
         .value(0) as u64;
     Ok(val)
+}
+
+async fn run_mean_sql(ctx: &SessionContext, col: &str, table: &str) -> anyhow::Result<Option<f64>> {
+    use datafusion::arrow::array::{Array, Float64Array};
+
+    let sql = format!(
+        "SELECT CAST(AVG(\"{col}\") AS DOUBLE) FROM {table}",
+        col = col,
+        table = table
+    );
+    let df = ctx.sql(&sql).await.context("AVG query failed")?;
+    let batches = df.collect().await.context("Failed to collect AVG")?;
+    if batches.is_empty() || batches[0].num_rows() == 0 {
+        return Ok(None);
+    }
+    let arr = batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .context("Expected Float64 for AVG")?;
+    if arr.is_null(0) {
+        return Ok(None);
+    }
+    Ok(Some(arr.value(0)))
 }
 
 async fn run_min_max_sql(
@@ -137,13 +163,15 @@ pub async fn introspect(ctx: &SessionContext, table_name: &str) -> anyhow::Resul
         )
         .await?;
 
-        let (min, max) = if is_numeric(dt) {
-            match run_min_max_sql(ctx, col, table_name).await? {
-                Some((mn, mx)) => (Some(mn), Some(mx)),
-                None => (None, None),
+        let (min, max, mean) = if is_numeric(dt) {
+            let mm = run_min_max_sql(ctx, col, table_name).await?;
+            let avg = run_mean_sql(ctx, col, table_name).await?;
+            match mm {
+                Some((mn, mx)) => (Some(mn), Some(mx), avg),
+                None => (None, None, None),
             }
         } else {
-            (None, None)
+            (None, None, None)
         };
 
         columns.push(ColumnInfo {
@@ -153,6 +181,7 @@ pub async fn introspect(ctx: &SessionContext, table_name: &str) -> anyhow::Resul
             unique,
             min,
             max,
+            mean,
         });
     }
 

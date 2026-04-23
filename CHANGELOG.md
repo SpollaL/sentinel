@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `sentinel profile <file>` command — prints per-column stats (type, nulls %, unique, min/max/mean) and a ready-to-use `rules.yaml` block with suggested rules inferred from the data
+- `mean` field added to `sentinel schema` output for numeric columns
 - `validate` and `schema` subcommands — CLI now uses `sentinel validate <file> --rules <rules>` (breaking change from flat invocation)
 - `sentinel schema <file>` command — outputs per-column type, null count, distinct count, min/max, and total row count as JSON
 - `severity` field on rules (`error` | `warning`, default `error`) — warning rules fail with exit code `2` instead of `1`

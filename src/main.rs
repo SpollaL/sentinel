@@ -10,7 +10,7 @@ mod storage;
 
 use output::OutputFormat;
 use rules::{RulesFile, Severity};
-use runner::run_rule;
+use runner::{fetch_violation_samples, run_rule};
 use storage::register_data;
 
 use crate::{
@@ -35,6 +35,9 @@ struct Cli {
     /// Print full error chain on failure
     #[arg(long)]
     verbose: bool,
+    /// Show first N violating rows per failed rule (default 5)
+    #[arg(long, value_name = "N", default_missing_value = "5", num_args = 0..=1)]
+    show_violations: Option<u64>,
 }
 
 #[tokio::main]
@@ -159,9 +162,19 @@ async fn run(args: Cli) -> anyhow::Result<i32> {
 
     let mut results: Vec<RuleResult> = Vec::new();
     for rule in &rules.rules {
-        let result = run_rule(&ctx, rule, total_rows)
+        let mut result = run_rule(&ctx, rule, total_rows)
             .await
             .with_context(|| format!("Rule '{}' failed to execute", rule.name))?;
+        if matches!(result.status, RuleStatus::Fail) {
+            if let Some(limit) = args.show_violations {
+                let samples = fetch_violation_samples(&ctx, rule, limit)
+                    .await
+                    .with_context(|| {
+                        format!("Failed to fetch violation samples for rule '{}'", rule.name)
+                    })?;
+                result.sample_rows = Some(samples);
+            }
+        }
         results.push(result);
     }
 
@@ -210,6 +223,7 @@ mod tests {
             violations: 0,
             total_rows: 10,
             violation_rate: 0.0,
+            sample_rows: None,
         }
     }
 

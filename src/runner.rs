@@ -1,8 +1,13 @@
 use crate::rules::{Check, Rule, Severity};
 use anyhow::Context;
-use datafusion::arrow::array::Int64Array;
+use datafusion::arrow::array::{
+    Array, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
+    StringArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+};
+use datafusion::arrow::datatypes::DataType;
 use datafusion::prelude::*;
 use serde::Serialize;
+use serde_json::{json, Value as JsonValue};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -28,6 +33,8 @@ pub struct RuleResult {
     pub violations: u64,
     pub total_rows: u64,
     pub violation_rate: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sample_rows: Option<Vec<JsonValue>>,
 }
 
 fn build_sql(rule: &Rule) -> anyhow::Result<String> {
@@ -84,6 +91,59 @@ fn build_sql(rule: &Rule) -> anyhow::Result<String> {
     }
 }
 
+/// Build a SQL query that SELECTs the violating rows (not a COUNT).
+/// Returns `Ok(None)` for `Custom` checks, which cannot produce sample rows.
+pub fn build_violation_sample_sql(rule: &Rule, limit: u64) -> anyhow::Result<Option<String>> {
+    match &rule.check {
+        Check::NotNull => Ok(Some(format!(
+            "SELECT * FROM data WHERE \"{}\" IS NULL LIMIT {}",
+            rule.column, limit
+        ))),
+        Check::NotEmpty => Ok(Some(format!(
+            "SELECT * FROM data WHERE \"{}\" = '' LIMIT {}",
+            rule.column, limit
+        ))),
+        Check::Min => {
+            let min = rule.min.context("Min check requires a min value")?;
+            Ok(Some(format!(
+                "SELECT * FROM data WHERE \"{}\" < {} LIMIT {}",
+                rule.column, min, limit
+            )))
+        }
+        Check::Max => {
+            let max = rule.max.context("Max check requires a max value")?;
+            Ok(Some(format!(
+                "SELECT * FROM data WHERE \"{}\" > {} LIMIT {}",
+                rule.column, max, limit
+            )))
+        }
+        Check::Between => {
+            let min = rule.min.context("Between check requires a min value")?;
+            let max = rule.max.context("Between check requires a max value")?;
+            Ok(Some(format!(
+                "SELECT * FROM data WHERE \"{}\" < {} OR \"{}\" > {} LIMIT {}",
+                rule.column, min, rule.column, max, limit
+            )))
+        }
+        Check::Unique => Ok(Some(format!(
+            "SELECT * FROM data WHERE \"{}\" IN (SELECT \"{}\" FROM data GROUP BY \"{}\" HAVING COUNT(*) > 1) LIMIT {}",
+            rule.column, rule.column, rule.column, limit
+        ))),
+        Check::Regex => {
+            let pattern = rule
+                .pattern
+                .clone()
+                .context("Regex check requires a pattern value")?;
+            let escaped = pattern.replace('\'', "''");
+            Ok(Some(format!(
+                "SELECT * FROM data WHERE REGEXP_MATCH(\"{}\", '{}') IS NULL LIMIT {}",
+                rule.column, escaped, limit
+            )))
+        }
+        Check::Custom => Ok(None),
+    }
+}
+
 pub fn validate_rule(rule: &Rule) -> anyhow::Result<()> {
     build_sql(rule)?;
     Ok(())
@@ -116,6 +176,165 @@ pub async fn run_sql(ctx: &SessionContext, sql: String) -> anyhow::Result<u64> {
     Ok(values)
 }
 
+/// Fetch up to `limit` rows that violate the rule, as JSON objects.
+/// Returns an empty vec for Custom checks or when there are no violations.
+pub async fn fetch_violation_samples(
+    ctx: &SessionContext,
+    rule: &Rule,
+    limit: u64,
+) -> anyhow::Result<Vec<JsonValue>> {
+    let Some(sql) = build_violation_sample_sql(rule, limit)? else {
+        return Ok(vec![]);
+    };
+    let df = ctx.sql(&sql).await.context("Sample SQL query failed")?;
+    let batches = df
+        .collect()
+        .await
+        .context("Failed to collect sample results")?;
+
+    let mut rows: Vec<JsonValue> = Vec::new();
+    for batch in &batches {
+        let schema = batch.schema();
+        let num_rows = batch.num_rows();
+        for row_idx in 0..num_rows {
+            let mut obj = serde_json::Map::new();
+            for col_idx in 0..batch.num_columns() {
+                let col = batch.column(col_idx);
+                let field = schema.field(col_idx);
+                let col_name = field.name().clone();
+                let value: JsonValue = match field.data_type() {
+                    DataType::Int8 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<Int8Array>()
+                                .unwrap()
+                                .value(row_idx))
+                        }
+                    }
+                    DataType::Int16 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<Int16Array>()
+                                .unwrap()
+                                .value(row_idx))
+                        }
+                    }
+                    DataType::Int32 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<Int32Array>()
+                                .unwrap()
+                                .value(row_idx))
+                        }
+                    }
+                    DataType::Int64 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<Int64Array>()
+                                .unwrap()
+                                .value(row_idx))
+                        }
+                    }
+                    DataType::Float32 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<Float32Array>()
+                                .unwrap()
+                                .value(row_idx))
+                        }
+                    }
+                    DataType::Float64 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<Float64Array>()
+                                .unwrap()
+                                .value(row_idx))
+                        }
+                    }
+                    DataType::Utf8 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<StringArray>()
+                                .unwrap()
+                                .value(row_idx))
+                        }
+                    }
+                    DataType::UInt8 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col.as_any().downcast_ref::<UInt8Array>().unwrap().value(row_idx))
+                        }
+                    }
+                    DataType::UInt16 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col.as_any().downcast_ref::<UInt16Array>().unwrap().value(row_idx))
+                        }
+                    }
+                    DataType::UInt32 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col.as_any().downcast_ref::<UInt32Array>().unwrap().value(row_idx))
+                        }
+                    }
+                    DataType::UInt64 => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col.as_any().downcast_ref::<UInt64Array>().unwrap().value(row_idx))
+                        }
+                    }
+                    DataType::Boolean => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(col
+                                .as_any()
+                                .downcast_ref::<BooleanArray>()
+                                .unwrap()
+                                .value(row_idx))
+                        }
+                    }
+                    _ => {
+                        if col.is_null(row_idx) {
+                            JsonValue::Null
+                        } else {
+                            json!(format!("{:?}", col.slice(row_idx, 1)))
+                        }
+                    }
+                };
+                obj.insert(col_name, value);
+            }
+            rows.push(JsonValue::Object(obj));
+        }
+    }
+    Ok(rows)
+}
+
 pub async fn run_rule(
     ctx: &SessionContext,
     rule: &Rule,
@@ -138,6 +357,7 @@ pub async fn run_rule(
         violations,
         total_rows,
         violation_rate,
+        sample_rows: None,
     })
 }
 
@@ -489,5 +709,133 @@ mod test {
         let res = run_rule(&ctx, &rule, 3).await.unwrap();
         assert!(matches!(res.status, RuleStatus::Pass));
         assert_eq!(res.severity, Severity::Warning);
+    }
+
+    // ------------------------------------------------------------------
+    // fetch_violation_samples tests
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_fetch_samples_not_null() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (NULL), (3)) AS t(age)")
+                .await;
+        let rule = make_rule("age_not_null", "age", Check::NotNull);
+        let samples = fetch_violation_samples(&ctx, &rule, 5).await.unwrap();
+        assert_eq!(samples.len(), 1);
+        assert!(samples[0]["age"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_samples_min() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (5), (10)) AS t(age)").await;
+        let rule = Rule {
+            min: Some(3.0),
+            ..make_rule("age_min", "age", Check::Min)
+        };
+        let samples = fetch_violation_samples(&ctx, &rule, 5).await.unwrap();
+        assert_eq!(samples.len(), 1);
+        // value 1 is below min 3
+        assert_eq!(samples[0]["age"], json!(1_i64));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_samples_max() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (5), (10)) AS t(age)").await;
+        let rule = Rule {
+            max: Some(4.0),
+            ..make_rule("age_max", "age", Check::Max)
+        };
+        let samples = fetch_violation_samples(&ctx, &rule, 5).await.unwrap();
+        // values 5 and 10 are above max 4
+        assert_eq!(samples.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_samples_between() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (5), (10)) AS t(age)").await;
+        let rule = Rule {
+            min: Some(2.0),
+            max: Some(8.0),
+            ..make_rule("age_between", "age", Check::Between)
+        };
+        let samples = fetch_violation_samples(&ctx, &rule, 5).await.unwrap();
+        // values 1 and 10 are out of range
+        assert_eq!(samples.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_samples_not_empty() {
+        let ctx = make_ctx(
+            "CREATE TABLE data AS SELECT * FROM (VALUES ('hello'), (''), ('world')) AS t(name)",
+        )
+        .await;
+        let rule = make_rule("name_not_empty", "name", Check::NotEmpty);
+        let samples = fetch_violation_samples(&ctx, &rule, 5).await.unwrap();
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0]["name"], json!(""));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_samples_unique() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES ('a'), ('b'), ('a')) AS t(name)")
+                .await;
+        let rule = make_rule("name_unique", "name", Check::Unique);
+        let samples = fetch_violation_samples(&ctx, &rule, 5).await.unwrap();
+        // both 'a' rows are duplicates
+        assert_eq!(samples.len(), 2);
+        assert!(samples.iter().all(|r| r["name"] == json!("a")));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_samples_regex() {
+        let ctx = make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES ('foo@bar.com'), ('notanemail')) AS t(email)").await;
+        let rule = Rule {
+            pattern: Some("^[^@]+@[^@]+$".to_string()),
+            ..make_rule("email_regex", "email", Check::Regex)
+        };
+        let samples = fetch_violation_samples(&ctx, &rule, 5).await.unwrap();
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0]["email"], json!("notanemail"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_samples_limit() {
+        // 10 violating rows, request only 3
+        let ctx = make_ctx(
+            "CREATE TABLE data AS SELECT * FROM (VALUES \
+             (NULL),(NULL),(NULL),(NULL),(NULL),(NULL),(NULL),(NULL),(NULL),(NULL)\
+             ) AS t(age)",
+        )
+        .await;
+        let rule = make_rule("age_not_null", "age", Check::NotNull);
+        let samples = fetch_violation_samples(&ctx, &rule, 3).await.unwrap();
+        assert_eq!(samples.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_samples_no_violations() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (2), (3)) AS t(age)").await;
+        let rule = make_rule("age_not_null", "age", Check::NotNull);
+        let samples = fetch_violation_samples(&ctx, &rule, 5).await.unwrap();
+        assert!(samples.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_samples_custom_returns_empty() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES (1), (NULL)) AS t(age)").await;
+        let rule = Rule {
+            sql: Some("SELECT COUNT(*) FROM data WHERE age IS NULL".into()),
+            ..make_rule("age_not_null", "age", Check::Custom)
+        };
+        // Custom check cannot produce sample rows — must return empty vec
+        let samples = fetch_violation_samples(&ctx, &rule, 5).await.unwrap();
+        assert!(samples.is_empty());
     }
 }

@@ -1,0 +1,11 @@
+[advisories]
+# Transitive deps with no patched version available as of 2026-04-23.
+# Remove each entry once a patched version exists and Cargo.lock is updated.
+ignore = [
+    "RUSTSEC-2026-0041", # lz4_flex: info leak on invalid decompress — no patch yet
+    "RUSTSEC-2026-0037", # quinn-proto — no patch yet
+    "RUSTSEC-2026-0049", # rustls-webpki — no patch yet
+    "RUSTSEC-2026-0098", # rustls-webpki — no patch yet
+    "RUSTSEC-2026-0099", # rustls-webpki — no patch yet
+    "RUSTSEC-2026-0104", # rustls-webpki — no patch yet
+]

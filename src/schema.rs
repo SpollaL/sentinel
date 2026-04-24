@@ -16,6 +16,16 @@ pub struct ColumnInfo {
     pub max: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mean: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p01: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p25: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p50: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p75: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p99: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,6 +109,62 @@ async fn run_mean_sql(ctx: &SessionContext, col: &str, table: &str) -> anyhow::R
     Ok(Some(arr.value(0)))
 }
 
+struct Quantiles {
+    p01: f64,
+    p25: f64,
+    p50: f64,
+    p75: f64,
+    p99: f64,
+}
+
+// Runs 5 `approx_percentile_cont` aggregates in a single query.
+// t-digest sketches are built per-expression, so this is 5 sketches on one
+// scan of the column — simpler than custom UDFs and fast enough for profiling.
+async fn run_quantiles_sql(
+    ctx: &SessionContext,
+    col: &str,
+    table: &str,
+) -> anyhow::Result<Option<Quantiles>> {
+    use datafusion::arrow::array::{Array, Float64Array};
+
+    let sql = format!(
+        "SELECT \
+            CAST(approx_percentile_cont(\"{col}\", 0.01) AS DOUBLE), \
+            CAST(approx_percentile_cont(\"{col}\", 0.25) AS DOUBLE), \
+            CAST(approx_percentile_cont(\"{col}\", 0.50) AS DOUBLE), \
+            CAST(approx_percentile_cont(\"{col}\", 0.75) AS DOUBLE), \
+            CAST(approx_percentile_cont(\"{col}\", 0.99) AS DOUBLE) \
+         FROM {table}",
+        col = col,
+        table = table
+    );
+    let df = ctx.sql(&sql).await.context("quantile query failed")?;
+    let batches = df.collect().await.context("Failed to collect quantiles")?;
+    if batches.is_empty() || batches[0].num_rows() == 0 {
+        return Ok(None);
+    }
+    let batch = &batches[0];
+    let mut vals = [0.0; 5];
+    for (i, slot) in vals.iter_mut().enumerate() {
+        let arr = batch
+            .column(i)
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .context("Expected Float64 for quantile")?;
+        if arr.is_null(0) {
+            return Ok(None);
+        }
+        *slot = arr.value(0);
+    }
+    Ok(Some(Quantiles {
+        p01: vals[0],
+        p25: vals[1],
+        p50: vals[2],
+        p75: vals[3],
+        p99: vals[4],
+    }))
+}
+
 async fn run_min_max_sql(
     ctx: &SessionContext,
     col: &str,
@@ -163,15 +229,27 @@ pub async fn introspect(ctx: &SessionContext, table_name: &str) -> anyhow::Resul
         )
         .await?;
 
-        let (min, max, mean) = if is_numeric(dt) {
+        let (min, max, mean, quantiles) = if is_numeric(dt) {
             let mm = run_min_max_sql(ctx, col, table_name).await?;
             let avg = run_mean_sql(ctx, col, table_name).await?;
+            let q = run_quantiles_sql(ctx, col, table_name).await?;
             match mm {
-                Some((mn, mx)) => (Some(mn), Some(mx), avg),
-                None => (None, None, None),
+                Some((mn, mx)) => (Some(mn), Some(mx), avg, q),
+                None => (None, None, None, None),
             }
         } else {
-            (None, None, None)
+            (None, None, None, None)
+        };
+
+        let (p01, p25, p50, p75, p99) = match quantiles {
+            Some(q) => (
+                Some(q.p01),
+                Some(q.p25),
+                Some(q.p50),
+                Some(q.p75),
+                Some(q.p99),
+            ),
+            None => (None, None, None, None, None),
         };
 
         columns.push(ColumnInfo {
@@ -182,6 +260,11 @@ pub async fn introspect(ctx: &SessionContext, table_name: &str) -> anyhow::Resul
             min,
             max,
             mean,
+            p01,
+            p25,
+            p50,
+            p75,
+            p99,
         });
     }
 
@@ -260,5 +343,57 @@ mod tests {
         .await;
         let out = introspect(&ctx, "data").await.unwrap();
         assert_eq!(out.row_count, 5);
+    }
+
+    #[tokio::test]
+    async fn test_introspect_quantiles_numeric() {
+        let ctx = make_ctx(
+            "CREATE TABLE data AS SELECT * FROM (VALUES (10), (20), (30), (40), (50), (60), (70), (80), (90), (100)) AS t(x)",
+        )
+        .await;
+        let out = introspect(&ctx, "data").await.unwrap();
+        let col = &out.columns[0];
+        assert!(col.p01.is_some());
+        assert!(col.p25.is_some());
+        assert!(col.p50.is_some());
+        assert!(col.p75.is_some());
+        assert!(col.p99.is_some());
+        // All quantiles must fall within the observed min/max.
+        for q in [col.p01, col.p25, col.p50, col.p75, col.p99]
+            .iter()
+            .flatten()
+        {
+            assert!((10.0..=100.0).contains(q), "quantile out of range: {q}");
+        }
+        // Basic ordering sanity: p01 <= p50 <= p99.
+        assert!(col.p01.unwrap() <= col.p50.unwrap());
+        assert!(col.p50.unwrap() <= col.p99.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_introspect_quantiles_non_numeric_absent() {
+        let ctx =
+            make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES ('a'), ('b'), ('c')) AS t(v)")
+                .await;
+        let out = introspect(&ctx, "data").await.unwrap();
+        let col = &out.columns[0];
+        assert!(col.p01.is_none());
+        assert!(col.p50.is_none());
+        assert!(col.p99.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_introspect_quantiles_all_null_numeric() {
+        // All-null numeric column — min/max/mean/quantiles should all be None.
+        let ctx = make_ctx(
+            "CREATE TABLE data AS SELECT * FROM (VALUES (CAST(NULL AS BIGINT)), (CAST(NULL AS BIGINT))) AS t(x)",
+        )
+        .await;
+        let out = introspect(&ctx, "data").await.unwrap();
+        let col = &out.columns[0];
+        assert!(col.min.is_none());
+        assert!(col.max.is_none());
+        assert!(col.p01.is_none());
+        assert!(col.p99.is_none());
     }
 }

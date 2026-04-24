@@ -101,6 +101,15 @@ struct SchemaArgs {
 struct ProfileArgs {
     /// Path to the dataset file (CSV or Parquet)
     file: String,
+    /// Output format (text or json)
+    #[arg(short, long, default_value = "text")]
+    format: ProfileFormat,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum ProfileFormat {
+    Text,
+    Json,
 }
 
 #[derive(Args)]
@@ -336,9 +345,11 @@ async fn run_profile(args: ProfileArgs) -> anyhow::Result<()> {
     let ctx = SessionContext::new();
     register_data(&ctx, &args.file).await?;
     let schema_output = schema::introspect(&ctx, "data").await?;
-    let rules = profile::generate_suggested_rules(&schema_output);
-    let text = profile::format_profile_text(&schema_output, &rules);
-    print!("{text}");
+    let profile_output = profile::build_profile(&ctx, schema_output, "data").await?;
+    match args.format {
+        ProfileFormat::Text => print!("{}", profile::format_profile_text(&profile_output)),
+        ProfileFormat::Json => println!("{}", profile::format_profile_json(&profile_output)?),
+    }
     Ok(())
 }
 

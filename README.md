@@ -89,11 +89,15 @@ echo '' | sentinel validate data.csv --rules - --rule not_null:id
 
 ### profile
 
-Profile a dataset — no rules file needed. Prints per-column stats and emits a ready-to-use `rules.yaml` block you can paste straight into a rules file.
+Profile a dataset — no rules file needed. Prints per-column stats (including quantiles and top-K frequent values) and emits a ready-to-use `rules.yaml` block you can paste straight into a rules file.
 
 ```bash
-sentinel profile <data-file>
+sentinel profile <data-file> [--format text|json]
 ```
+
+| Flag | Description |
+|---|---|
+| `-f, --format <fmt>` | Output format: `text` (default, human-readable) or `json` (structured, for agents) |
 
 ```
 Column: age
@@ -103,6 +107,20 @@ Column: age
   min:         18
   max:         92
   mean:        34.70
+  p01:         19.00
+  p25:         27.00
+  p50:         34.00
+  p75:         42.00
+  p99:         88.00
+
+Column: status
+  type:        utf8
+  nulls:       0 (0.0%)
+  unique:      3
+  top values:
+    active × 720
+    pending × 210
+    closed × 70
 
 ---
 Suggested rules (1000 rows):
@@ -116,16 +134,35 @@ rules:
   check: between
   min: 18.0
   max: 92.0
-- name: age_unique
+- name: age_typical_range
   column: age
-  check: unique
+  check: between
+  min: 19.0
+  max: 88.0
+  threshold: 0.02
+  severity: warning
+- name: status_not_null
+  column: status
+  check: not_null
 ```
+
+Stats emitted:
+- **All columns** — type, null count/rate, unique count
+- **Numeric columns** (int/float) — min, max, mean, plus P01/P25/P50/P75/P99 quantiles (via t-digest approximation)
+- **Low-cardinality columns** (2 ≤ unique ≤ 50) — top 10 most-frequent non-null values with counts
 
 Rule suggestion logic:
 - **`not_null`** — suggested for any column with 0% nulls (error severity)
 - **`not_null` + threshold** — suggested for columns with ≤ 20% nulls (warning severity, threshold = observed null rate rounded up)
-- **`between`** — suggested for numeric columns using observed min/max as bounds
+- **`between`** (min/max) — suggested for numeric columns using observed min/max as bounds
+- **`between`** (typical range) — additionally suggested for numeric columns on datasets of ≥ 100 rows, using P01/P99 bounds with a 2% violation threshold (warning severity) — more robust to outliers than the raw min/max rule
 - **`unique`** — suggested when all values in the column are distinct
+
+Use `--format json` for structured output, useful for coding agents or automation:
+
+```bash
+sentinel profile data.csv --format json
+```
 
 ### query
 
@@ -180,18 +217,21 @@ Inspect the schema and basic stats of a dataset — no rules file needed.
 sentinel schema <data-file>
 ```
 
-Outputs JSON with per-column info (type, null count, distinct count, min/max/mean for numeric columns) and total row count:
+Outputs JSON with per-column info (type, null count, distinct count, min/max/mean and P01/P25/P50/P75/P99 quantiles for numeric columns) and total row count:
 
 ```json
 {
   "columns": [
-    { "name": "age",  "type": "int64",  "nulls": 2,  "unique": 87, "min": 18.0, "max": 99.0, "mean": 34.7 },
+    { "name": "age",  "type": "int64",  "nulls": 2,  "unique": 87, "min": 18.0, "max": 99.0, "mean": 34.7,
+      "p01": 19.0, "p25": 27.0, "p50": 34.0, "p75": 42.0, "p99": 88.0 },
     { "name": "name", "type": "utf8",   "nulls": 0,  "unique": 100 },
     { "name": "flag", "type": "bool",   "nulls": 1,  "unique": 2 }
   ],
   "row_count": 100
 }
 ```
+
+Quantiles are approximate (DataFusion's `approx_percentile_cont` / t-digest) and omitted for non-numeric columns.
 
 ## Exit codes
 

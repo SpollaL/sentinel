@@ -36,12 +36,56 @@ sentinel validate <data-file> --rules <rules-file> [OPTIONS]
 
 | Flag | Description |
 |---|---|
-| `-r, --rules <file>` | Path to rules YAML file (required) |
+| `-r, --rules <file>` | Path to rules YAML file (use `-` for stdin). Optional if `--rule` is used. |
+| `--rule <SPEC>` | Inline rule spec (repeatable). See [Inline rules](#inline-rules). |
 | `-f, --format <fmt>` | Output format: `json` (default) or `table` |
 | `--dry-run` | Validate rules file and schema without running checks |
 | `--verbose` | Print full error chain on failure |
 | `--show-violations [N]` | Attach first N violating rows to each failed rule (default 5) |
 | `--agent` | Stream JSON Lines output for machine consumption (see Agent mode) |
+
+At least one of `--rules` or `--rule` must be provided.
+
+#### Inline rules
+
+Pass rules directly on the command line with `--rule` using the compact syntax `check:column[:arg...]`:
+
+```bash
+sentinel validate data.csv \
+  --rule not_null:id \
+  --rule between:age:18:99 \
+  --rule regex:email:'^[^@]+@[^@]+$'
+```
+
+Supported forms:
+
+| Form | Example |
+|---|---|
+| `not_null:<column>` | `not_null:id` |
+| `not_empty:<column>` | `not_empty:name` |
+| `unique:<column>` | `unique:id` |
+| `min:<column>:<value>` | `min:age:0` |
+| `max:<column>:<value>` | `max:age:120` |
+| `between:<column>:<min>:<max>` | `between:age:18:99` |
+| `regex:<column>:<pattern>` | `regex:email:^[^@]+@[^@]+$` (pattern may contain `:`) |
+
+Each inline rule is named `{column}_{check}`; duplicates across `--rule` flags or against YAML rules are disambiguated with `_2`, `_3`, … suffixes.
+
+Inline rules are always severity `error`. For `warning`, `threshold`, or `custom` SQL rules, use a rules YAML file. You can combine both: `--rules rules.yaml --rule not_null:id`.
+
+#### Reading rules from stdin
+
+Pipe YAML rules into sentinel with `--rules -`:
+
+```bash
+cat rules.yaml | sentinel validate data.csv --rules -
+```
+
+Empty stdin is accepted when at least one `--rule` flag is also present — useful for coding agents that prefer passing everything via flags:
+
+```bash
+echo '' | sentinel validate data.csv --rules - --rule not_null:id
+```
 
 ### profile
 

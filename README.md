@@ -24,7 +24,7 @@ sentinel validate examples/data.csv --rules examples/rules.yaml --format table
 
 ## Commands
 
-Sentinel has three subcommands: `validate`, `schema`, and `profile`.
+Sentinel has five subcommands: `validate`, `schema`, `profile`, `query`, and `head`.
 
 ### validate
 
@@ -83,6 +83,51 @@ Rule suggestion logic:
 - **`between`** — suggested for numeric columns using observed min/max as bounds
 - **`unique`** — suggested when all values in the column are distinct
 
+### query
+
+Run arbitrary SQL against the dataset and stream rows as JSONL. The dataset is registered as the table named `data`, so queries must reference `FROM data`.
+
+```bash
+sentinel query <data-file> --sql "<SQL>" [--max-rows <N>]
+```
+
+| Flag | Description |
+|---|---|
+| `-s, --sql <sql>` | SQL to execute (required) |
+| `--max-rows <N>` | Cap on rows returned (default `1000`) — applied via `LIMIT` on top of the user query, safe with `WITH`/`UNION`/etc. |
+
+One JSON object per row is written to stdout, keyed by column name. Nulls are emitted explicitly.
+
+```bash
+sentinel query examples/data.csv --sql "SELECT * FROM data WHERE age IS NULL OR age > 27"
+```
+
+```json
+{"age":30,"name":"alice"}
+{"age":null,"name":"bob"}
+```
+
+### head
+
+Return the first N rows of the dataset as JSONL — a convenience wrapper over `query`.
+
+```bash
+sentinel head <data-file> [-n <N>]
+```
+
+| Flag | Description |
+|---|---|
+| `-n <N>` | Number of rows to return (default `10`) |
+
+```bash
+sentinel head examples/data.csv -n 2
+```
+
+```json
+{"age":30,"name":"alice"}
+{"age":null,"name":"bob"}
+```
+
 ### schema
 
 Inspect the schema and basic stats of a dataset — no rules file needed.
@@ -111,8 +156,10 @@ Outputs JSON with per-column info (type, null count, distinct count, min/max/mea
 | `0` | All rules passed |
 | `1` | At least one `error`-severity rule failed, or input file is empty |
 | `2` | Only `warning`-severity rules failed (no errors) |
-| `3` | Invalid rules file or schema mismatch |
+| `3` | Invalid rules file or schema mismatch (also: bad SQL for `query`) |
 | `4` | Data file not found or unreadable |
+
+Codes `1` and `2` apply to `validate` only; `query`, `head`, `schema`, and `profile` exit with `0`, `3`, or `4`.
 
 ## Output
 

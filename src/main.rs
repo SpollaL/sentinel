@@ -5,8 +5,10 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing_subscriber::EnvFilter;
 
+mod arrow_json;
 mod output;
 mod profile;
+mod query;
 mod rules;
 mod runner;
 mod schema;
@@ -41,6 +43,10 @@ enum Commands {
     Schema(SchemaArgs),
     /// Profile a dataset and suggest starter rules
     Profile(ProfileArgs),
+    /// Run a SQL query against the dataset (table name: `data`) and return rows as JSONL
+    Query(QueryArgs),
+    /// Return the first N rows of the dataset as JSONL
+    Head(HeadArgs),
 }
 
 #[derive(Args)]
@@ -77,6 +83,27 @@ struct SchemaArgs {
 struct ProfileArgs {
     /// Path to the dataset file (CSV or Parquet)
     file: String,
+}
+
+#[derive(Args)]
+struct QueryArgs {
+    /// Path to the dataset file (CSV or Parquet)
+    file: String,
+    /// SQL to execute. The dataset is registered as the table `data`.
+    #[arg(short, long)]
+    sql: String,
+    /// Maximum rows to return (safety cap for agent token budgets)
+    #[arg(long, default_value = "1000")]
+    max_rows: usize,
+}
+
+#[derive(Args)]
+struct HeadArgs {
+    /// Path to the dataset file (CSV or Parquet)
+    file: String,
+    /// Number of rows to return
+    #[arg(short, default_value = "10")]
+    n: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +211,67 @@ async fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Query(args) => match run_query_cmd(args).await {
+            Ok(code) => std::process::exit(code),
+            Err(e) => {
+                let code = e
+                    .downcast_ref::<ExitCodeError>()
+                    .map(|ex| ex.code)
+                    .unwrap_or(1);
+                eprintln!("Error: {e}");
+                std::process::exit(code);
+            }
+        },
+        Commands::Head(args) => match run_head_cmd(args).await {
+            Ok(code) => std::process::exit(code),
+            Err(e) => {
+                let code = e
+                    .downcast_ref::<ExitCodeError>()
+                    .map(|ex| ex.code)
+                    .unwrap_or(1);
+                eprintln!("Error: {e}");
+                std::process::exit(code);
+            }
+        },
     }
+}
+
+// ---------------------------------------------------------------------------
+// Query and head subcommands
+// ---------------------------------------------------------------------------
+
+fn print_rows_as_jsonl(rows: &[serde_json::Value]) -> anyhow::Result<()> {
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    use std::io::Write;
+    for row in rows {
+        writeln!(handle, "{}", serde_json::to_string(row)?)?;
+    }
+    Ok(())
+}
+
+async fn run_query_cmd(args: QueryArgs) -> anyhow::Result<i32> {
+    let ctx = SessionContext::new();
+    register_data(&ctx, &args.file)
+        .await
+        .map_err(|e| ExitCodeError::new(4, e))?;
+    let rows = query::run_query(&ctx, &args.sql, args.max_rows)
+        .await
+        .map_err(|e| ExitCodeError::new(3, e))?;
+    print_rows_as_jsonl(&rows)?;
+    Ok(0)
+}
+
+async fn run_head_cmd(args: HeadArgs) -> anyhow::Result<i32> {
+    let ctx = SessionContext::new();
+    register_data(&ctx, &args.file)
+        .await
+        .map_err(|e| ExitCodeError::new(4, e))?;
+    let rows = query::run_head(&ctx, args.n)
+        .await
+        .map_err(|e| ExitCodeError::new(3, e))?;
+    print_rows_as_jsonl(&rows)?;
+    Ok(0)
 }
 
 // ---------------------------------------------------------------------------

@@ -1,13 +1,10 @@
+use crate::arrow_json::record_batches_to_json_rows;
 use crate::rules::{Check, Rule, Severity};
 use anyhow::Context;
-use datafusion::arrow::array::{
-    Array, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
-    StringArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
-};
-use datafusion::arrow::datatypes::DataType;
+use datafusion::arrow::array::Int64Array;
 use datafusion::prelude::*;
 use serde::Serialize;
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
 #[derive(Debug, Serialize)]
@@ -192,164 +189,7 @@ pub async fn fetch_violation_samples(
         .collect()
         .await
         .context("Failed to collect sample results")?;
-
-    let mut rows: Vec<JsonValue> = Vec::new();
-    for batch in &batches {
-        let schema = batch.schema();
-        let num_rows = batch.num_rows();
-        for row_idx in 0..num_rows {
-            let mut obj = serde_json::Map::new();
-            for col_idx in 0..batch.num_columns() {
-                let col = batch.column(col_idx);
-                let field = schema.field(col_idx);
-                let col_name = field.name().clone();
-                let value: JsonValue = match field.data_type() {
-                    DataType::Int8 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<Int8Array>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::Int16 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<Int16Array>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::Int32 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<Int32Array>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::Int64 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<Int64Array>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::Float32 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<Float32Array>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::Float64 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<Float64Array>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::Utf8 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<StringArray>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::UInt8 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<UInt8Array>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::UInt16 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<UInt16Array>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::UInt32 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<UInt32Array>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::UInt64 => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<UInt64Array>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    DataType::Boolean => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(col
-                                .as_any()
-                                .downcast_ref::<BooleanArray>()
-                                .unwrap()
-                                .value(row_idx))
-                        }
-                    }
-                    _ => {
-                        if col.is_null(row_idx) {
-                            JsonValue::Null
-                        } else {
-                            json!(format!("{:?}", col.slice(row_idx, 1)))
-                        }
-                    }
-                };
-                obj.insert(col_name, value);
-            }
-            rows.push(JsonValue::Object(obj));
-        }
-    }
-    Ok(rows)
+    record_batches_to_json_rows(&batches)
 }
 
 pub async fn run_rule(
@@ -413,6 +253,7 @@ pub async fn run_rules_parallel(
 #[cfg(test)]
 mod test {
     use super::*;
+    use serde_json::json;
 
     async fn make_ctx(sql: &str) -> Arc<SessionContext> {
         let ctx = SessionContext::new();

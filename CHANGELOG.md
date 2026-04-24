@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `sentinel query <file> --sql "<SQL>"` command — runs arbitrary SQL against the registered `data` table and streams rows as JSONL. Defaults to capping output at 1000 rows via `--max-rows` for agent token-budget safety; the cap is applied as a `DataFrame::limit` rather than SQL subquery wrapping, so user `WITH`/`UNION`/`ORDER BY` clauses pass through unchanged.
+- `sentinel head <file> [-n N]` command — returns the first N rows of the dataset as JSONL (default 10). Thin wrapper over `query`.
+
+### Changed
+- `--show-violations` sample rows now cover more Arrow types (timestamps, dates, decimals) — the row-to-JSON conversion was rebuilt on `arrow::json::WriterBuilder`.
 - `sentinel profile <file>` command — prints per-column stats (type, nulls %, unique, min/max/mean) and a ready-to-use `rules.yaml` block with suggested rules inferred from the data
 - `mean` field added to `sentinel schema` output for numeric columns
 - `validate` and `schema` subcommands — CLI now uses `sentinel validate <file> --rules <rules>` (breaking change from flat invocation)

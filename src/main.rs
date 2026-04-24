@@ -15,7 +15,7 @@ mod schema;
 mod storage;
 
 use output::OutputFormat;
-use rules::{RulesFile, Severity};
+use rules::{disambiguate_names, parse_rule_spec, Rule, RulesFile, Severity};
 use runner::{fetch_violation_samples, run_rule, run_rules_parallel};
 use storage::register_data;
 
@@ -53,9 +53,27 @@ enum Commands {
 struct ValidateArgs {
     /// Path to the dataset file (CSV or Parquet)
     file: String,
-    /// Path to the rules YAML file
+    /// Path to the rules YAML file (use `-` to read from stdin)
     #[arg(short, long)]
-    rules: String,
+    rules: Option<String>,
+    #[arg(
+        long = "rule",
+        value_name = "SPEC",
+        help = "Inline rule spec (repeatable). Syntax: check:column[:arg...]",
+        long_help = "Inline rule spec (repeatable). Syntax: check:column[:arg...]\n\n\
+                     Arity forms:\n\
+                     \x20\x20not_null:<column>\n\
+                     \x20\x20not_empty:<column>\n\
+                     \x20\x20unique:<column>\n\
+                     \x20\x20min:<column>:<value>\n\
+                     \x20\x20max:<column>:<value>\n\
+                     \x20\x20between:<column>:<min>:<max>\n\
+                     \x20\x20regex:<column>:<pattern>\n\n\
+                     Combine multiple --rule flags, and/or combine with --rules <file>. \
+                     Inline specs always have severity `error`; use a YAML file for \
+                     `warning`, `threshold`, or `custom` SQL."
+    )]
+    rule_specs: Vec<String>,
     /// Output format (json or table)
     #[arg(short, long, default_value = "json")]
     format: Option<OutputFormat>,
@@ -152,7 +170,7 @@ fn classify_error(e: &anyhow::Error) -> &'static str {
     let msg = format!("{e}");
     if msg.contains("Could not read") || msg.contains("No such file") || msg.contains("not found") {
         "file_not_found"
-    } else if msg.contains("parse") || msg.contains("YAML") {
+    } else if msg.contains("parse") || msg.contains("YAML") || msg.contains("rule spec") {
         "rules_parse_error"
     } else if msg.contains("Invalid columns") || msg.contains("schema") {
         "schema_mismatch"
@@ -328,16 +346,62 @@ async fn run_profile(args: ProfileArgs) -> anyhow::Result<()> {
 // Validate subcommand
 // ---------------------------------------------------------------------------
 
+/// Read the rules source as a single string (file path, `-` for stdin, or `None`).
+fn read_rules_content(path: Option<&str>) -> anyhow::Result<String> {
+    match path {
+        None => Ok(String::new()),
+        Some("-") => {
+            use std::io::Read;
+            let mut buf = String::new();
+            std::io::stdin()
+                .lock()
+                .read_to_string(&mut buf)
+                .map_err(|e| anyhow::anyhow!("Could not read rules from stdin: {e}"))?;
+            Ok(buf)
+        }
+        Some(p) => std::fs::read_to_string(p)
+            .map_err(|e| anyhow::anyhow!("Could not read rules file: {e}")),
+    }
+}
+
+/// Combine YAML content and inline specs into a single `RulesFile`.
+///
+/// - YAML content may be empty (e.g. empty stdin) when at least one inline spec is present.
+/// - Inline spec errors are wrapped with the offending spec text.
+/// - Resulting rule names are disambiguated so duplicates get `_2`, `_3`, … suffixes.
+fn merge_rules(content: &str, inline_specs: &[String]) -> anyhow::Result<RulesFile> {
+    let mut rules: Vec<Rule> = Vec::new();
+
+    if !content.trim().is_empty() {
+        let parsed: RulesFile = serde_yaml::from_str(content)
+            .map_err(|e| anyhow::anyhow!("Could not parse the rules YAML: {e}"))?;
+        rules.extend(parsed.rules);
+    }
+
+    for spec in inline_specs {
+        let rule = parse_rule_spec(spec)
+            .map_err(|e| anyhow::anyhow!("Invalid rule spec '{spec}': {e}"))?;
+        rules.push(rule);
+    }
+
+    if rules.is_empty() {
+        anyhow::bail!("No rules provided. Pass --rules <file> or one or more --rule <spec>.");
+    }
+
+    disambiguate_names(&mut rules);
+    Ok(RulesFile { rules })
+}
+
+fn load_rules(path: Option<&str>, inline_specs: &[String]) -> anyhow::Result<RulesFile> {
+    let content = read_rules_content(path)?;
+    merge_rules(&content, inline_specs)
+}
+
 async fn run_validate(args: ValidateArgs) -> anyhow::Result<i32> {
     let agent = args.agent;
 
-    // Exit code 3: invalid rules file or schema mismatch
-    let content = std::fs::read_to_string(&args.rules)
-        .map_err(|e| anyhow::anyhow!("Could not read rules file: {e}"))
-        .map_err(|e| ExitCodeError::new(3, e))?;
-
-    let rules: RulesFile = serde_yaml::from_str(&content)
-        .map_err(|e| anyhow::anyhow!("Could not parse the rules YAML: {e}"))
+    // Exit code 3: invalid rules file, bad inline spec, or schema mismatch
+    let rules = load_rules(args.rules.as_deref(), &args.rule_specs)
         .map_err(|e| ExitCodeError::new(3, e))?;
 
     // Agent mode always uses JSON Lines; ignore --format

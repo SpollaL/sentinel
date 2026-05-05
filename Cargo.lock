@@ -1039,8 +1039,7 @@ dependencies = [
 [[package]]
 name = "brotli"
 version = "7.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc97b8f16f944bba54f0433f07e30be199b6dc2bd25937444bbad560bcea29bd"
+source = "git+https://github.com/dropbox/rust-brotli?tag=7.0.0#08a4a9a7496edef311ea405222854536a63c5da7"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
@@ -5283,8 +5282,7 @@ dependencies = [
 [[package]]
 name = "zerocopy"
 version = "0.8.40"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a789c6e490b576db9f7e6b6d661bcc9799f7c0ac8352f56ea20193b2681532e5"
+source = "git+https://github.com/google/zerocopy?tag=v0.8.40#ff5ab2dac376774f6f647a8e4b98feb64eaf0833"
 dependencies = [
  "zerocopy-derive",
 ]
@@ -5292,8 +5290,7 @@ dependencies = [
 [[package]]
 name = "zerocopy-derive"
 version = "0.8.40"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f65c489a7071a749c849713807783f70672b28094011623e200cb86dcb835953"
+source = "git+https://github.com/google/zerocopy?tag=v0.8.40#ff5ab2dac376774f6f647a8e4b98feb64eaf0833"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -29,3 +29,8 @@ azure_storage_blobs = "0.20"
 aws-sdk-s3 = "1"
 aws-config = "1"
 
+# LOCAL ONLY — DO NOT COMMIT — Zscaler blocks crates.io; fetch zerocopy from GitHub instead
+[patch.crates-io]
+zerocopy = { git = "https://github.com/google/zerocopy", tag = "v0.8.40" }
+brotli = { git = "https://github.com/dropbox/rust-brotli", tag = "7.0.0" }
+

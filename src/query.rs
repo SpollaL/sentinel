@@ -112,8 +112,14 @@ mod tests {
             .await
             .unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("No field named"), "expected field error, got: {msg}");
-        assert!(msg.contains("double-quoted"), "expected quoting hint, got: {msg}");
+        assert!(
+            msg.contains("No field named"),
+            "expected field error, got: {msg}"
+        );
+        assert!(
+            msg.contains("double-quoted"),
+            "expected quoting hint, got: {msg}"
+        );
     }
 
     #[tokio::test]

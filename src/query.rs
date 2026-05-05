@@ -18,7 +18,19 @@ pub async fn run_query(
     sql: &str,
     max_rows: usize,
 ) -> anyhow::Result<Vec<JsonValue>> {
-    let df = ctx.sql(sql).await.context("SQL query failed")?;
+    let df = ctx.sql(sql).await.map_err(|e| {
+        let detail = e.to_string();
+        if detail.contains("No field named") {
+            anyhow::anyhow!(
+                "SQL query failed: {detail}\n\
+                 Hint: unquoted identifiers are lowercased by DataFusion — \
+                 column names that are SQL reserved words or mixed-case must be \
+                 double-quoted, e.g. SELECT \"ENDPERIOD\" instead of SELECT ENDPERIOD"
+            )
+        } else {
+            anyhow::anyhow!("SQL query failed: {detail}")
+        }
+    })?;
     let limited = df
         .limit(0, Some(max_rows))
         .context("Failed to apply row limit")?;
@@ -82,6 +94,26 @@ mod tests {
         let ctx = numeric_ctx().await;
         let res = run_query(&ctx, "SELECT * FROM nonexistent_table", 10).await;
         assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn query_reserved_word_column_error_includes_hint() {
+        // Simulate a table with a reserved-word column name (lowercased by DataFusion).
+        // DataFusion lowercases unquoted identifiers, so referencing ENDPERIOD unquoted
+        // tries to find 'endperiod' which doesn't match the stored '"ENDPERIOD"'.
+        let ctx = SessionContext::new();
+        ctx.sql(r#"CREATE TABLE data AS SELECT * FROM (VALUES ('2024-01-01')) AS t("ENDPERIOD")"#)
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+        let err = run_query(&ctx, "SELECT MIN(ENDPERIOD) FROM data", 100)
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("No field named"), "expected field error, got: {msg}");
+        assert!(msg.contains("double-quoted"), "expected quoting hint, got: {msg}");
     }
 
     #[tokio::test]

@@ -95,6 +95,9 @@ struct ValidateArgs {
 struct SchemaArgs {
     /// Path to the dataset file (CSV or Parquet)
     file: String,
+    /// Print full error chain on failure
+    #[arg(long)]
+    verbose: bool,
 }
 
 #[derive(Args)]
@@ -227,8 +230,13 @@ async fn main() {
             }
         }
         Commands::Schema(args) => {
+            let verbose = args.verbose;
             if let Err(e) = run_schema(args).await {
-                eprintln!("Error: {e}");
+                if verbose {
+                    eprintln!("Error: {e:#}");
+                } else {
+                    eprintln!("Error: {e}");
+                }
                 std::process::exit(1);
             }
         }

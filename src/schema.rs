@@ -223,9 +223,18 @@ pub async fn introspect(ctx: &SessionContext, table_name: &str) -> anyhow::Resul
         )
         .await?;
 
+        // approx_distinct uses HyperLogLog for bounded-memory cardinality estimation.
+        // We cast to VARCHAR first because DataFusion's HLL does not support all physical
+        // types that appear in parquet files (e.g. Date32, Utf8View). The cast is free for
+        // string-like types and produces the canonical string form for dates and timestamps,
+        // so distinct counts remain correct. Error is ~1% at HLL's default precision; exact
+        // for small cardinalities. Cast to BIGINT so run_count_sql's Int64 downcast is valid.
         let unique = run_count_sql(
             ctx,
-            &format!("SELECT COUNT(DISTINCT \"{}\") FROM {}", col, table_name),
+            &format!(
+                "SELECT CAST(approx_distinct(CAST(\"{}\" AS VARCHAR)) AS BIGINT) FROM {}",
+                col, table_name
+            ),
         )
         .await?;
 
@@ -305,7 +314,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_introspect_unique() {
-        // 3 distinct values
+        // HLL is exact at small cardinalities — 3 distinct values.
         let ctx =
             make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES ('a'), ('b'), ('c')) AS t(v)")
                 .await;
@@ -313,13 +322,32 @@ mod tests {
         let col = &out.columns[0];
         assert_eq!(col.unique, 3);
 
-        // 2 distinct values (one duplicate)
+        // 2 distinct values (one duplicate).
         let ctx2 =
             make_ctx("CREATE TABLE data AS SELECT * FROM (VALUES ('a'), ('b'), ('a')) AS t(v)")
                 .await;
         let out2 = introspect(&ctx2, "data").await.unwrap();
         let col2 = &out2.columns[0];
         assert_eq!(col2.unique, 2);
+    }
+
+    #[tokio::test]
+    async fn test_introspect_unique_date_column() {
+        // Date32 columns must not crash approx_distinct. The CAST-to-VARCHAR
+        // workaround handles types the HLL implementation doesn't natively support.
+        let ctx = make_ctx(
+            "CREATE TABLE data AS SELECT * FROM (\
+              VALUES \
+                (CAST('2022-01-01' AS DATE)), \
+                (CAST('2022-06-15' AS DATE)), \
+                (CAST('2022-01-01' AS DATE))\
+            ) AS t(d)",
+        )
+        .await;
+        let out = introspect(&ctx, "data").await.unwrap();
+        let col = &out.columns[0];
+        // 2 distinct dates (one duplicate); HLL is exact at this cardinality.
+        assert_eq!(col.unique, 2);
     }
 
     #[tokio::test]

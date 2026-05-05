@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt fmt-check audit clean
+.PHONY: build test lint fmt fmt-check audit clean install-hooks
 
 build:
 	cargo build
@@ -17,6 +17,10 @@ fmt-check:
 
 audit:
 	cargo audit
+
+install-hooks:
+	cp hooks/pre-commit .git/hooks/pre-commit
+	chmod +x .git/hooks/pre-commit
 
 clean:
 	cargo clean

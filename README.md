@@ -440,6 +440,22 @@ Or use a connection string:
 |---|---|
 | `AZURE_STORAGE_CONNECTION_STRING` | Full connection string |
 
+#### Azurite (local emulator)
+
+To point at a local [Azurite](https://github.com/Azure/Azurite) instance instead of real Azure, set:
+
+| Variable | Description |
+|---|---|
+| `AZURE_STORAGE_USE_EMULATOR` | `true` — uses the well-known `devstoreaccount1` credentials and HTTP |
+| `AZURITE_BLOB_STORAGE_URL` | Optional; defaults to `http://127.0.0.1:10000`. Override only if Azurite runs on a different host/port. |
+
+`AZURE_STORAGE_ACCOUNT_NAME` / `AZURE_STORAGE_ACCOUNT_KEY` are **not** needed in emulator mode — they're filled in automatically. Example:
+
+```bash
+export AZURE_STORAGE_USE_EMULATOR=true
+sentinel schema az://my-container/data.csv
+```
+
 ### Amazon S3
 
 Use the `s3://` scheme:

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- README: documented Azurite (local Azure emulator) connectivity. Setting `AZURE_STORAGE_USE_EMULATOR=true` (optionally with `AZURITE_BLOB_STORAGE_URL`) routes `az://` URLs to Azurite using the well-known emulator credentials over HTTP.
 - `sentinel profile` now emits per-column quantiles (P01/P25/P50/P75/P99) for numeric columns via DataFusion's `approx_percentile_cont` (t-digest), and a top-10 frequent-values block for non-numeric / bounded-cardinality columns (2 ≤ unique ≤ 50, NULLs excluded).
 - `sentinel profile` suggests a new `{col}_typical_range` rule for numeric columns on datasets of ≥ 100 rows — a `between` check bounded by P01/P99 with a 2% violation threshold and warning severity. Robust to single-outlier min/max values that wreck the raw `{col}_range` bounds.
 - `sentinel profile --format json` — structured JSON output alongside the default human-readable text. JSON shape: `{row_count, columns[], suggested_rules[]}`, with each column flattening the `schema` fields plus optional `top_values`.
